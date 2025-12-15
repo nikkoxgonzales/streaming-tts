@@ -1,3 +1,7 @@
+![streaming-tts.jpg](streaming-tts.jpg)
+
+---
+
 # streaming-tts
 
 A streamlined, Kokoro-based text-to-speech library with streaming support.

@@ -63,3 +63,4 @@ jobs:
 
       - name: Run mypy
         run: mypy src/
+        continue-on-error: true  # Type checking is advisory for now

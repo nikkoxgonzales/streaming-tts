@@ -1,8 +1,9 @@
 name: Publish to PyPI
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'  # Triggers on v1.0.0, v0.2.1, etc.
 
 jobs:
   test:

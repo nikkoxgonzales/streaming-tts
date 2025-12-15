@@ -67,6 +67,18 @@ python_version = "3.12"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+# Ignore missing stubs for optional dependencies
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "pyaudio",
+    "av",
+    "kokoro",
+    "kokoro.*",
+]
+ignore_missing_imports = true
+ignore_errors = true
 
 [tool.coverage.run]
 source = ["src/streaming_tts"]
