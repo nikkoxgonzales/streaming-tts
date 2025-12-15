@@ -15,6 +15,18 @@ Example usage:
     async for chunk in stream.stream_async():
         await ws.send_bytes(chunk)
 
+    # Low-latency voice assistant pattern (with LLM streaming)
+    from streaming_tts import FragmentConfig
+
+    async def on_first_audio(chunk):
+        await ws.send_json({"type": "audio", "start": True})
+
+    async for chunk in tts.stream_text_async(
+        llm.stream_response(prompt),
+        on_first_chunk=on_first_audio
+    ):
+        await ws.send_bytes(chunk)
+
     # Format conversion (requires: pip install streaming-tts[formats])
     from streaming_tts import StreamingAudioWriter
     writer = StreamingAudioWriter("mp3")
@@ -24,13 +36,14 @@ Example usage:
     send(writer.finalize())
 """
 
-from .config import PlaybackConfig, TTSConfig
+from .config import FragmentConfig, PlaybackConfig, TTSConfig
 from .formats import AudioFormat, StreamingAudioWriter, get_content_type
 from .stream import TTSStream
 
 __all__ = [
     "TTSConfig",
     "PlaybackConfig",
+    "FragmentConfig",
     "TTSStream",
     "StreamingAudioWriter",
     "AudioFormat",

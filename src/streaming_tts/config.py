@@ -86,6 +86,26 @@ class TTSConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class FragmentConfig:
+    """
+    Configuration for fast sentence fragment detection.
+
+    Used by stream_text_async() to yield audio earlier for lower latency.
+
+    Attributes:
+        fragment_delimiters: Characters that can end a fragment (for first fragment)
+        sentence_delimiters: Characters that end a sentence (for subsequent fragments)
+        minimum_fragment_length: Minimum chars before yielding first fragment
+        force_fragment_after_words: Force yield after N words even without delimiter
+    """
+
+    fragment_delimiters: frozenset[str] = frozenset('.?!;:,\n-)')
+    sentence_delimiters: frozenset[str] = frozenset('.?!\n')
+    minimum_fragment_length: int = 15
+    force_fragment_after_words: int = 20
+
+
+@dataclass(frozen=True, slots=True)
 class PlaybackConfig:
     """
     Audio playback configuration.

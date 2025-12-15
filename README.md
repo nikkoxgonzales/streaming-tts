@@ -22,30 +22,6 @@ Extracted and simplified from [RealtimeTTS](https://github.com/KoljaB/RealtimeTT
 ## Installation
 
 ```bash
-pip install streaming-tts
-```
-
-For audio playback support:
-
-```bash
-pip install streaming-tts[playback]
-```
-
-For format conversion (MP3, Opus, etc.):
-
-```bash
-pip install streaming-tts[formats]
-```
-
-For development:
-
-```bash
-pip install streaming-tts[dev]
-```
-
-For everything:
-
-```bash
 pip install streaming-tts[all]
 ```
 
@@ -246,7 +222,7 @@ Default output format:
 
 ### Format Conversion
 
-Convert to other formats on-the-fly (requires `pip install streaming-tts[formats]`):
+Convert to other formats on-the-fly:
 
 ```python
 from streaming_tts import TTSStream
