@@ -111,7 +111,8 @@ class StreamingAudioWriter:
             codec_name,
             rate=sample_rate,
         )
-        self._stream.channels = channels
+        # Set layout (this also sets channels implicitly)
+        # Note: channels attribute is read-only in PyAV 12+
         self._stream.layout = "mono" if channels == 1 else "stereo"
 
         # Set bitrate for lossy codecs

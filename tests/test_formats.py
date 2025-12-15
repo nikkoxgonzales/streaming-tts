@@ -400,5 +400,5 @@ class TestStreamingAudioWriterMockedPyAV:
 
         formats_module.StreamingAudioWriter("wav", sample_rate=24000, channels=2)
 
-        assert mock_stream.channels == 2
+        # Note: channels is not set directly in PyAV 12+, only layout
         assert mock_stream.layout == "stereo"

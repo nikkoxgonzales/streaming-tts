@@ -456,11 +456,12 @@ class TestStreamTextAsync:
             mock_writer.finalize.return_value = b"final_chunk"
             mock_writer_cls.return_value = mock_writer
 
-            chunks = [chunk async for chunk in stream.stream_text_async(
+            async for _ in stream.stream_text_async(
                 text_gen(),
                 on_first_chunk=on_first,
                 format="mp3"
-            )]
+            ):
+                pass
 
             assert len(first_chunk_received) == 1
             assert first_chunk_received[0] == b"encoded_chunk"
