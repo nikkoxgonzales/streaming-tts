@@ -259,3 +259,349 @@ class TestShutdown:
         thread.join(timeout=1)
 
         assert not stream.is_playing()
+
+
+class TestPlayAsyncNoText:
+    """Tests for play_async() with no text."""
+
+    def test_play_async_no_text(self, stream) -> None:
+        """Test play_async with no text returns dummy thread."""
+        thread = stream.play_async(muted=True)
+        assert isinstance(thread, threading.Thread)
+        thread.join(timeout=1)
+        assert not thread.is_alive()
+
+
+class TestFormatConversion:
+    """Tests for format conversion in play/stream methods."""
+
+    def test_play_with_format(self, stream) -> None:
+        """Test play with non-PCM format."""
+        chunks = []
+        stream.feed("Hello world")
+
+        with patch("streaming_tts.stream.StreamingAudioWriter") as mock_writer_cls:
+            mock_writer = MagicMock()
+            mock_writer.write_chunk.return_value = b"encoded_chunk"
+            mock_writer.finalize.return_value = b"final_chunk"
+            mock_writer_cls.return_value = mock_writer
+
+            stream.play(on_chunk=chunks.append, muted=True, format="mp3")
+
+            mock_writer_cls.assert_called_once()
+            assert mock_writer.write_chunk.called
+            assert mock_writer.finalize.called
+            assert b"encoded_chunk" in chunks
+            assert b"final_chunk" in chunks
+
+    def test_play_with_format_empty_encoded(self, stream) -> None:
+        """Test play with format when writer returns empty encoded."""
+        chunks = []
+        stream.feed("Hello world")
+
+        with patch("streaming_tts.stream.StreamingAudioWriter") as mock_writer_cls:
+            mock_writer = MagicMock()
+            mock_writer.write_chunk.return_value = None  # No output yet
+            mock_writer.finalize.return_value = b"final_chunk"
+            mock_writer_cls.return_value = mock_writer
+
+            stream.play(on_chunk=chunks.append, muted=True, format="mp3")
+
+            # Only final chunk should be in chunks
+            assert b"final_chunk" in chunks
+
+    def test_stream_sync_with_format(self, stream) -> None:
+        """Test sync stream with non-PCM format."""
+        stream.feed("Hello world")
+
+        with patch("streaming_tts.stream.StreamingAudioWriter") as mock_writer_cls:
+            mock_writer = MagicMock()
+            mock_writer.write_chunk.return_value = b"encoded_chunk"
+            mock_writer.finalize.return_value = b"final_chunk"
+            mock_writer_cls.return_value = mock_writer
+
+            chunks = list(stream.stream(format="opus"))
+
+            mock_writer_cls.assert_called_once()
+            assert b"encoded_chunk" in chunks
+            assert b"final_chunk" in chunks
+
+    def test_stream_sync_with_format_empty_chunks(self, stream) -> None:
+        """Test sync stream with format when writer returns empty chunks."""
+        stream.feed("Hello world")
+
+        with patch("streaming_tts.stream.StreamingAudioWriter") as mock_writer_cls:
+            mock_writer = MagicMock()
+            mock_writer.write_chunk.return_value = None
+            mock_writer.finalize.return_value = None
+            mock_writer_cls.return_value = mock_writer
+
+            chunks = list(stream.stream(format="opus"))
+
+            # No chunks should be yielded when all are None
+            assert chunks == []
+
+    @pytest.mark.asyncio
+    async def test_stream_async_with_format(self, stream) -> None:
+        """Test async stream with non-PCM format."""
+        stream.feed("Hello world")
+
+        with patch("streaming_tts.stream.StreamingAudioWriter") as mock_writer_cls:
+            mock_writer = MagicMock()
+            mock_writer.write_chunk.return_value = b"encoded_chunk"
+            mock_writer.finalize.return_value = b"final_chunk"
+            mock_writer_cls.return_value = mock_writer
+
+            chunks = [chunk async for chunk in stream.stream_async(format="wav")]
+
+            mock_writer_cls.assert_called_once()
+            assert b"encoded_chunk" in chunks
+            assert b"final_chunk" in chunks
+
+    @pytest.mark.asyncio
+    async def test_stream_async_with_format_empty_chunks(self, stream) -> None:
+        """Test async stream with format when writer returns empty chunks."""
+        stream.feed("Hello world")
+
+        with patch("streaming_tts.stream.StreamingAudioWriter") as mock_writer_cls:
+            mock_writer = MagicMock()
+            mock_writer.write_chunk.return_value = None
+            mock_writer.finalize.return_value = None
+            mock_writer_cls.return_value = mock_writer
+
+            chunks = [chunk async for chunk in stream.stream_async(format="wav")]
+
+            # No chunks when all returns are None
+            assert chunks == []
+
+
+class TestStreamTextAsync:
+    """Tests for stream_text_async() method."""
+
+    @pytest.mark.asyncio
+    async def test_stream_text_async_basic(self, stream) -> None:
+        """Test basic stream_text_async functionality."""
+        async def text_gen():
+            yield "Hello "
+            yield "world!"
+
+        chunks = [chunk async for chunk in stream.stream_text_async(text_gen())]
+
+        assert len(chunks) > 0
+        assert all(isinstance(c, bytes) for c in chunks)
+
+    @pytest.mark.asyncio
+    async def test_stream_text_async_with_sentence_boundary(self, stream) -> None:
+        """Test stream_text_async with sentence boundary detection."""
+        async def text_gen():
+            yield "Hello world. "
+            yield "This is a test."
+
+        chunks = [chunk async for chunk in stream.stream_text_async(text_gen())]
+
+        assert len(chunks) > 0
+
+    @pytest.mark.asyncio
+    async def test_stream_text_async_with_on_first_chunk(self, stream) -> None:
+        """Test stream_text_async with on_first_chunk callback."""
+        first_chunk_received = []
+
+        def on_first(chunk):
+            first_chunk_received.append(chunk)
+
+        async def text_gen():
+            yield "Hello world!"
+
+        chunks = [chunk async for chunk in stream.stream_text_async(
+            text_gen(),
+            on_first_chunk=on_first
+        )]
+
+        assert len(first_chunk_received) == 1
+        assert len(chunks) > 0
+
+    @pytest.mark.asyncio
+    async def test_stream_text_async_with_format(self, stream) -> None:
+        """Test stream_text_async with non-PCM format."""
+        async def text_gen():
+            yield "Hello world!"
+
+        with patch("streaming_tts.stream.StreamingAudioWriter") as mock_writer_cls:
+            mock_writer = MagicMock()
+            mock_writer.write_chunk.return_value = b"encoded_chunk"
+            mock_writer.finalize.return_value = b"final_chunk"
+            mock_writer_cls.return_value = mock_writer
+
+            chunks = [chunk async for chunk in stream.stream_text_async(
+                text_gen(),
+                format="mp3"
+            )]
+
+            assert b"encoded_chunk" in chunks
+
+    @pytest.mark.asyncio
+    async def test_stream_text_async_with_format_on_first_chunk(self, stream) -> None:
+        """Test stream_text_async with format and on_first_chunk callback."""
+        first_chunk_received = []
+
+        def on_first(chunk):
+            first_chunk_received.append(chunk)
+
+        async def text_gen():
+            yield "Hello world!"
+
+        with patch("streaming_tts.stream.StreamingAudioWriter") as mock_writer_cls:
+            mock_writer = MagicMock()
+            mock_writer.write_chunk.return_value = b"encoded_chunk"
+            mock_writer.finalize.return_value = b"final_chunk"
+            mock_writer_cls.return_value = mock_writer
+
+            chunks = [chunk async for chunk in stream.stream_text_async(
+                text_gen(),
+                on_first_chunk=on_first,
+                format="mp3"
+            )]
+
+            assert len(first_chunk_received) == 1
+            assert first_chunk_received[0] == b"encoded_chunk"
+
+    @pytest.mark.asyncio
+    async def test_stream_text_async_empty_text(self, stream) -> None:
+        """Test stream_text_async with empty text."""
+        async def text_gen():
+            yield "   "  # Only whitespace
+
+        chunks = [chunk async for chunk in stream.stream_text_async(text_gen())]
+
+        # Should handle gracefully
+        assert isinstance(chunks, list)
+
+    @pytest.mark.asyncio
+    async def test_stream_text_async_cancelled(self, stream) -> None:
+        """Test stream_text_async cancellation."""
+        import asyncio
+
+        async def slow_text_gen():
+            yield "Hello "
+            await asyncio.sleep(10)  # Long delay
+            yield "world!"
+
+        async def run_and_cancel():
+            gen = stream.stream_text_async(slow_text_gen())
+            task = asyncio.create_task(gen.__anext__())
+            await asyncio.sleep(0.1)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        await run_and_cancel()
+
+    @pytest.mark.asyncio
+    async def test_stream_text_async_force_fragment(self, stream) -> None:
+        """Test stream_text_async with force fragment after N words."""
+        from streaming_tts.config import FragmentConfig
+
+        config = FragmentConfig(force_fragment_after_words=3)
+
+        async def text_gen():
+            # Long text without delimiters to trigger force fragment
+            yield "one two three four five six seven eight"
+
+        chunks = [chunk async for chunk in stream.stream_text_async(
+            text_gen(),
+            fragment_config=config
+        )]
+
+        assert len(chunks) > 0
+
+
+class TestStopDuringStream:
+    """Tests for stop event during streaming."""
+
+    def test_stream_sync_stop(self, stream) -> None:
+        """Test stopping sync stream."""
+        stream.feed("Hello world this is a long text for testing")
+        chunks = []
+
+        for i, chunk in enumerate(stream.stream()):
+            chunks.append(chunk)
+            if i >= 0:
+                stream.stop()
+                break
+
+        # Should have stopped early
+        assert len(chunks) <= 2
+
+    @pytest.mark.asyncio
+    async def test_stream_async_stop(self, stream) -> None:
+        """Test stopping async stream."""
+        stream.feed("Hello world this is a long text for testing")
+        chunks = []
+
+        async for chunk in stream.stream_async():
+            chunks.append(chunk)
+            stream.stop()
+            break
+
+        # Should have stopped
+        assert len(chunks) >= 1
+
+
+class TestPlayChunk:
+    """Tests for _play_chunk method."""
+
+    def test_play_chunk_creates_player(self, stream) -> None:
+        """Test that _play_chunk creates an AudioPlayer."""
+        # Remove any existing player
+        if hasattr(stream, "_player"):
+            del stream._player
+
+        mock_player = MagicMock()
+        mock_audio_module = MagicMock()
+        mock_audio_module.AudioPlayer.return_value = mock_player
+
+        with patch.dict("sys.modules", {"streaming_tts.audio": mock_audio_module}):
+            stream._play_chunk(b"test_audio_data")
+
+            mock_audio_module.AudioPlayer.assert_called_once()
+            mock_player.start.assert_called_once()
+            mock_player.write.assert_called_once_with(b"test_audio_data")
+
+    def test_play_chunk_reuses_player(self, stream) -> None:
+        """Test that _play_chunk reuses existing player."""
+        # Remove any existing player first
+        if hasattr(stream, "_player"):
+            del stream._player
+
+        mock_player = MagicMock()
+        mock_audio_module = MagicMock()
+        mock_audio_module.AudioPlayer.return_value = mock_player
+
+        with patch.dict("sys.modules", {"streaming_tts.audio": mock_audio_module}):
+            # First call creates player
+            stream._play_chunk(b"chunk1")
+            # Second call should reuse
+            stream._play_chunk(b"chunk2")
+
+            # Player should be created once
+            assert mock_audio_module.AudioPlayer.call_count == 1
+            # But write called twice
+            assert mock_player.write.call_count == 2
+
+    def test_play_chunk_import_error(self, stream) -> None:
+        """Test _play_chunk handles ImportError gracefully."""
+        # Remove any existing player
+        if hasattr(stream, "_player"):
+            del stream._player
+
+        with patch.dict("sys.modules", {"streaming_tts.audio": None}):
+            # Should not raise
+            stream._play_chunk(b"test_audio_data")
+
+    def test_play_unmuted(self, stream) -> None:
+        """Test play with muted=False calls _play_chunk."""
+        with patch.object(stream, "_play_chunk") as mock_play_chunk:
+            stream.feed("Hello")
+            stream.play(muted=False)
+
+            assert mock_play_chunk.called
