@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 from collections.abc import AsyncIterator, Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
-from .buffers import AsyncChunkBuffer, ChunkBuffer
+from .buffers import AsyncChunkBuffer
 from .config import PlaybackConfig, TTSConfig
 from .engine import KokoroTTS
 from .formats import AudioFormat, StreamingAudioWriter
@@ -388,7 +389,5 @@ class TTSStream:
 
     def __del__(self) -> None:
         """Destructor - ensure cleanup."""
-        try:
+        with contextlib.suppress(Exception):
             self.shutdown()
-        except Exception:
-            pass

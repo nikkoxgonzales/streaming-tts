@@ -1,12 +1,13 @@
 """Tests for streaming audio format conversion."""
 
+import importlib.util
+
 import numpy as np
 import pytest
 
 from streaming_tts.formats import (
     FORMAT_CODECS,
     FORMAT_CONTAINERS,
-    AudioFormat,
     StreamingAudioWriter,
     get_content_type,
 )
@@ -142,12 +143,7 @@ class TestStreamingAudioWriterContextManager:
 
 
 # Tests that require PyAV - skip if not installed
-try:
-    import av
-
-    PYAV_AVAILABLE = True
-except ImportError:
-    PYAV_AVAILABLE = False
+PYAV_AVAILABLE = importlib.util.find_spec("av") is not None
 
 
 @pytest.mark.skipif(not PYAV_AVAILABLE, reason="PyAV not installed")
@@ -269,6 +265,7 @@ class TestStreamingAudioWriterMockedPyAV:
 
         # Need to reimport to pick up mocked av
         import importlib
+
         import streaming_tts.formats as formats_module
         importlib.reload(formats_module)
 
@@ -296,6 +293,7 @@ class TestStreamingAudioWriterMockedPyAV:
         mocker.patch.dict("sys.modules", {"av": mock_av})
 
         import importlib
+
         import streaming_tts.formats as formats_module
         importlib.reload(formats_module)
 
@@ -325,6 +323,7 @@ class TestStreamingAudioWriterMockedPyAV:
         mocker.patch.dict("sys.modules", {"av": mock_av})
 
         import importlib
+
         import streaming_tts.formats as formats_module
         importlib.reload(formats_module)
 
@@ -352,6 +351,7 @@ class TestStreamingAudioWriterMockedPyAV:
         mocker.patch.dict("sys.modules", {"av": mock_av})
 
         import importlib
+
         import streaming_tts.formats as formats_module
         importlib.reload(formats_module)
 
@@ -374,10 +374,11 @@ class TestStreamingAudioWriterMockedPyAV:
         mocker.patch.dict("sys.modules", {"av": mock_av})
 
         import importlib
+
         import streaming_tts.formats as formats_module
         importlib.reload(formats_module)
 
-        writer = formats_module.StreamingAudioWriter("aac", sample_rate=24000, bitrate=192000)
+        formats_module.StreamingAudioWriter("aac", sample_rate=24000, bitrate=192000)
 
         assert mock_stream.bit_rate == 192000
 
@@ -393,10 +394,11 @@ class TestStreamingAudioWriterMockedPyAV:
         mocker.patch.dict("sys.modules", {"av": mock_av})
 
         import importlib
+
         import streaming_tts.formats as formats_module
         importlib.reload(formats_module)
 
-        writer = formats_module.StreamingAudioWriter("wav", sample_rate=24000, channels=2)
+        formats_module.StreamingAudioWriter("wav", sample_rate=24000, channels=2)
 
         assert mock_stream.channels == 2
         assert mock_stream.layout == "stereo"

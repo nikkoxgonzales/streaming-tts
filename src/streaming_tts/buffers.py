@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 from collections import deque
 from typing import TYPE_CHECKING
@@ -246,7 +247,7 @@ class AsyncChunkBuffer:
         try:
             chunk = await asyncio.wait_for(self._queue.get(), timeout=0.1)
             return chunk
-        except asyncio.TimeoutError:
+        except TimeoutError:
             if self._done and self._queue.empty():
                 return None
             return await self.get() if not self._cancelled else None
@@ -255,20 +256,16 @@ class AsyncChunkBuffer:
         """Signal that no more chunks will be added."""
         self._done = True
         # Put sentinel value to unblock waiting consumers
-        try:
+        with contextlib.suppress(asyncio.QueueFull):
             self._queue.put_nowait(None)
-        except asyncio.QueueFull:
-            pass
 
     def cancel(self) -> None:
         """Cancel all operations."""
         self._cancelled = True
         self._done = True
         # Try to unblock consumers
-        try:
+        with contextlib.suppress(asyncio.QueueFull):
             self._queue.put_nowait(None)
-        except asyncio.QueueFull:
-            pass
 
     def reset(self) -> None:
         """Reset the buffer for reuse."""

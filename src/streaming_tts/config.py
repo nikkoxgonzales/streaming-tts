@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from typing import Literal
 
-
 # All available Kokoro voices
 KOKORO_VOICES: tuple[str, ...] = (
     # American English (lang_code='a')

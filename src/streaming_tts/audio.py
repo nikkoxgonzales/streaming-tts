@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import threading
 from typing import TYPE_CHECKING
 
@@ -158,10 +159,8 @@ class AudioPlayer:
 
     def __del__(self) -> None:
         """Destructor - ensure cleanup."""
-        try:
+        with contextlib.suppress(Exception):
             self.stop()
-        except Exception:
-            pass
 
 
 def is_playback_available() -> bool:

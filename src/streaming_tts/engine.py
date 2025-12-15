@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import re
-import tempfile
-import os
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -191,10 +189,7 @@ class KokoroTTS:
             total_weight += abs(weight)
             weighted = weight * voice_tensor
 
-            if sum_tensor is None:
-                sum_tensor = weighted
-            else:
-                sum_tensor = sum_tensor + weighted
+            sum_tensor = weighted if sum_tensor is None else sum_tensor + weighted
 
         if total_weight == 0 or sum_tensor is None:
             raise ValueError(f"Invalid voice formula: {formula}")
@@ -264,10 +259,7 @@ class KokoroTTS:
 
             weighted = normalized_weight * voice_tensor
 
-            if sum_tensor is None:
-                sum_tensor = weighted
-            else:
-                sum_tensor = sum_tensor + weighted
+            sum_tensor = weighted if sum_tensor is None else sum_tensor + weighted
 
         if sum_tensor is None:
             raise ValueError(f"Failed to blend voices: {formula}")

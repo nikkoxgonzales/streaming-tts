@@ -222,7 +222,7 @@ class StreamingAudioWriter:
         if not self._finalized:
             self.finalize()
 
-    def __enter__(self) -> "StreamingAudioWriter":
+    def __enter__(self) -> StreamingAudioWriter:
         """Context manager entry."""
         return self
 

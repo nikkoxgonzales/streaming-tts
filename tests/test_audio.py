@@ -15,7 +15,6 @@ class TestAudioPlayer:
         """Mock PyAudio module."""
         with patch.dict("sys.modules", {"pyaudio": MagicMock()}):
             # Reload the audio module to pick up the mock
-            import importlib
 
             import streaming_tts.audio as audio_module
 

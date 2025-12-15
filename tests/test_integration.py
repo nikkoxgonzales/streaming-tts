@@ -17,7 +17,7 @@ def mock_pipeline():
     with patch("kokoro.KPipeline") as mock_cls:
         # Create multiple chunks to simulate longer synthesis
         def generate_chunks():
-            for i in range(3):
+            for _ in range(3):
                 mock_result = MagicMock()
                 mock_result.audio = torch.randn(8000)  # ~333ms per chunk
                 mock_result.tokens = []
