@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "streaming-tts"
-version = "0.2.5"
+version = "0.2.6"
 description = "A streamlined, Kokoro-based text-to-speech library with streaming support"
 readme = "README.md"
 license = "MIT"
@@ -41,9 +41,9 @@ dev = [
 all = ["streaming-tts[formats,playback,dev]"]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/streaming-tts"
-Repository = "https://github.com/yourusername/streaming-tts"
-Issues = "https://github.com/yourusername/streaming-tts/issues"
+Homepage = "https://github.com/nikkoxgonzales/streaming-tts"
+Repository = "https://github.com/nikkoxgonzales/streaming-tts"
+Issues = "https://github.com/nikkoxgonzales/streaming-tts/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/streaming_tts"]
