@@ -22,7 +22,7 @@ Extracted and simplified from [RealtimeTTS](https://github.com/KoljaB/RealtimeTT
 ## Installation
 
 ```bash
-pip install streaming-tts[all]
+pip install streaming-tts
 ```
 
 ## Quick Start

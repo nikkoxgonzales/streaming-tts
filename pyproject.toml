@@ -25,11 +25,11 @@ dependencies = [
     "kokoro>=0.9.4",
     "torch>=2.0.0",
     "numpy>=1.24.0",
+    "av>=14.0.0",
+    "pyaudio>=0.2.13",
 ]
 
 [project.optional-dependencies]
-formats = ["av>=14.0.0"]
-playback = ["pyaudio>=0.2.13"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -38,7 +38,6 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.8",
 ]
-all = ["streaming-tts[formats,playback,dev]"]
 
 [project.urls]
 Homepage = "https://github.com/nikkoxgonzales/streaming-tts"
