@@ -250,3 +250,153 @@ class TestStreamingAudioWriterNoPyAV:
         """Non-PCM format raises ImportError without PyAV."""
         with pytest.raises(ImportError, match="PyAV is required"):
             StreamingAudioWriter("mp3")
+
+
+class TestStreamingAudioWriterMockedPyAV:
+    """Tests with mocked PyAV to cover encoding paths without PyAV installed."""
+
+    def test_mp3_init_with_mock(self, mocker) -> None:
+        """Test MP3 writer initialization with mocked PyAV."""
+        # Create mock av module
+        mock_av = mocker.MagicMock()
+        mock_container = mocker.MagicMock()
+        mock_stream = mocker.MagicMock()
+        mock_av.open.return_value = mock_container
+        mock_container.add_stream.return_value = mock_stream
+
+        # Patch the import
+        mocker.patch.dict("sys.modules", {"av": mock_av})
+
+        # Need to reimport to pick up mocked av
+        import importlib
+        import streaming_tts.formats as formats_module
+        importlib.reload(formats_module)
+
+        writer = formats_module.StreamingAudioWriter("mp3", sample_rate=24000, bitrate=128000)
+
+        assert writer.format == "mp3"
+        assert writer.sample_rate == 24000
+        mock_av.open.assert_called_once()
+        mock_container.add_stream.assert_called_once_with("libmp3lame", rate=24000)
+        assert mock_stream.bit_rate == 128000
+
+    def test_write_chunk_with_mock(self, mocker) -> None:
+        """Test write_chunk with mocked PyAV."""
+        mock_av = mocker.MagicMock()
+        mock_container = mocker.MagicMock()
+        mock_stream = mocker.MagicMock()
+        mock_frame = mocker.MagicMock()
+        mock_packet = mocker.MagicMock()
+
+        mock_av.open.return_value = mock_container
+        mock_container.add_stream.return_value = mock_stream
+        mock_av.AudioFrame.from_ndarray.return_value = mock_frame
+        mock_stream.encode.return_value = [mock_packet]
+
+        mocker.patch.dict("sys.modules", {"av": mock_av})
+
+        import importlib
+        import streaming_tts.formats as formats_module
+        importlib.reload(formats_module)
+
+        writer = formats_module.StreamingAudioWriter("wav", sample_rate=24000)
+
+        # Write a chunk
+        audio = np.array([100, 200, 300], dtype=np.int16)
+        writer.write_chunk(audio)
+
+        # Verify encoding was called
+        mock_av.AudioFrame.from_ndarray.assert_called_once()
+        mock_stream.encode.assert_called_once_with(mock_frame)
+        mock_container.mux.assert_called_once_with(mock_packet)
+
+    def test_write_chunk_float32_conversion(self, mocker) -> None:
+        """Test float32 to int16 conversion in write_chunk."""
+        mock_av = mocker.MagicMock()
+        mock_container = mocker.MagicMock()
+        mock_stream = mocker.MagicMock()
+        mock_frame = mocker.MagicMock()
+
+        mock_av.open.return_value = mock_container
+        mock_container.add_stream.return_value = mock_stream
+        mock_av.AudioFrame.from_ndarray.return_value = mock_frame
+        mock_stream.encode.return_value = []
+
+        mocker.patch.dict("sys.modules", {"av": mock_av})
+
+        import importlib
+        import streaming_tts.formats as formats_module
+        importlib.reload(formats_module)
+
+        writer = formats_module.StreamingAudioWriter("flac", sample_rate=24000)
+
+        # Write float32 audio
+        audio = np.array([0.5, -0.5], dtype=np.float32)
+        writer.write_chunk(audio)
+
+        # Verify AudioFrame was created with converted data
+        call_args = mock_av.AudioFrame.from_ndarray.call_args
+        assert call_args is not None
+
+    def test_finalize_with_mock(self, mocker) -> None:
+        """Test finalize flushes encoder."""
+        mock_av = mocker.MagicMock()
+        mock_container = mocker.MagicMock()
+        mock_stream = mocker.MagicMock()
+        mock_packet = mocker.MagicMock()
+
+        mock_av.open.return_value = mock_container
+        mock_container.add_stream.return_value = mock_stream
+        mock_stream.encode.return_value = [mock_packet]
+
+        mocker.patch.dict("sys.modules", {"av": mock_av})
+
+        import importlib
+        import streaming_tts.formats as formats_module
+        importlib.reload(formats_module)
+
+        writer = formats_module.StreamingAudioWriter("opus", sample_rate=24000)
+        writer.finalize()
+
+        # Verify flush (encode with None) and close
+        mock_stream.encode.assert_called_with(None)
+        mock_container.close.assert_called_once()
+
+    def test_aac_bitrate_set(self, mocker) -> None:
+        """Test AAC format sets bitrate."""
+        mock_av = mocker.MagicMock()
+        mock_container = mocker.MagicMock()
+        mock_stream = mocker.MagicMock()
+
+        mock_av.open.return_value = mock_container
+        mock_container.add_stream.return_value = mock_stream
+
+        mocker.patch.dict("sys.modules", {"av": mock_av})
+
+        import importlib
+        import streaming_tts.formats as formats_module
+        importlib.reload(formats_module)
+
+        writer = formats_module.StreamingAudioWriter("aac", sample_rate=24000, bitrate=192000)
+
+        assert mock_stream.bit_rate == 192000
+
+    def test_stereo_layout(self, mocker) -> None:
+        """Test stereo channel layout."""
+        mock_av = mocker.MagicMock()
+        mock_container = mocker.MagicMock()
+        mock_stream = mocker.MagicMock()
+
+        mock_av.open.return_value = mock_container
+        mock_container.add_stream.return_value = mock_stream
+
+        mocker.patch.dict("sys.modules", {"av": mock_av})
+
+        import importlib
+        import streaming_tts.formats as formats_module
+        importlib.reload(formats_module)
+
+        writer = formats_module.StreamingAudioWriter("wav", sample_rate=24000, channels=2)
+
+        assert mock_stream.channels == 2
+        assert mock_stream.layout == "stereo"

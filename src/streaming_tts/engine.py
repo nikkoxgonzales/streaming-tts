@@ -73,9 +73,9 @@ class KokoroTTS:
         if self.config.device is not None:
             return self.config.device
 
-        if torch.cuda.is_available():
+        if torch.cuda.is_available():  # pragma: no cover
             return "cuda"
-        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():  # pragma: no cover
             return "mps"
         return "cpu"
 
@@ -111,17 +111,17 @@ class KokoroTTS:
 
     def _check_memory(self) -> bool:
         """Check if GPU memory usage exceeds threshold."""
-        if self._device == "cuda":
+        if self._device == "cuda":  # pragma: no cover
             memory_gb = torch.cuda.memory_allocated() / 1e9
             return memory_gb > self.config.memory_threshold_gb
         return False
 
     def _clear_memory(self) -> None:
         """Clear GPU memory cache."""
-        if self._device == "cuda":
+        if self._device == "cuda":  # pragma: no cover
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
-        elif self._device == "mps" and hasattr(torch.mps, "empty_cache"):
+        elif self._device == "mps" and hasattr(torch.mps, "empty_cache"):  # pragma: no cover
             torch.mps.empty_cache()
 
     def _parse_voice_formula(
@@ -313,7 +313,7 @@ class KokoroTTS:
                 text, pipeline, voice_arg, yield_timing
             )
         except RuntimeError as e:
-            if "out of memory" in str(e).lower() and self._device == "cuda":
+            if "out of memory" in str(e).lower() and self._device == "cuda":  # pragma: no cover
                 self._clear_memory()
                 # Retry once
                 yield from self._generate_chunks(

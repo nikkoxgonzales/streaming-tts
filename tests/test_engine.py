@@ -161,6 +161,75 @@ class TestVoiceBlending:
         # The error should occur during synthesis when the formula is parsed
         # but since there's no asterisk, it's treated as a regular voice name
 
+    def test_new_style_equal_blend(self, engine, mock_pipeline) -> None:
+        """Test new-style equal blend: af_sarah+af_jessica."""
+        engine.load()
+        engine.set_voice("af_sarah+af_jessica")
+
+        list(engine.synthesize("Hello"))
+
+        pipeline = mock_pipeline.return_value
+        # Should load both voices
+        assert pipeline.load_single_voice.call_count >= 2
+
+    def test_new_style_weighted_blend(self, engine, mock_pipeline) -> None:
+        """Test new-style weighted blend: af_sarah(0.3)+af_jessica(0.7)."""
+        engine.load()
+        engine.set_voice("af_sarah(0.3)+af_jessica(0.7)")
+
+        list(engine.synthesize("Hello"))
+
+        pipeline = mock_pipeline.return_value
+        assert pipeline.load_single_voice.call_count >= 2
+        assert "af_sarah(0.3)+af_jessica(0.7)" in engine._blended_voices
+
+    def test_new_style_subtraction(self, engine, mock_pipeline) -> None:
+        """Test new-style subtraction: af_sarah-af_jessica."""
+        engine.load()
+        engine.set_voice("af_sarah-af_jessica")
+
+        list(engine.synthesize("Hello"))
+
+        pipeline = mock_pipeline.return_value
+        assert pipeline.load_single_voice.call_count >= 2
+
+    def test_three_voice_blend(self, engine, mock_pipeline) -> None:
+        """Test blending three voices."""
+        engine.load()
+        engine.set_voice("af_heart+af_nova+af_sky")
+
+        list(engine.synthesize("Hello"))
+
+        pipeline = mock_pipeline.return_value
+        assert pipeline.load_single_voice.call_count >= 3
+
+    def test_mixed_operations_blend(self, engine, mock_pipeline) -> None:
+        """Test mixed + and - operations."""
+        engine.load()
+        engine.set_voice("af_sarah+af_jessica-af_nova")
+
+        list(engine.synthesize("Hello"))
+
+        pipeline = mock_pipeline.return_value
+        assert pipeline.load_single_voice.call_count >= 3
+
+    def test_old_style_subtraction(self, engine, mock_pipeline) -> None:
+        """Test old-style formula with subtraction."""
+        engine.load()
+        engine.set_voice("0.7*af_sarah - 0.3*am_adam")
+
+        list(engine.synthesize("Hello"))
+
+        pipeline = mock_pipeline.return_value
+        assert pipeline.load_single_voice.call_count >= 2
+
+    def test_is_blend_formula_detection(self, engine) -> None:
+        """Test _is_blend_formula detection."""
+        assert engine._is_blend_formula("af_sarah+af_jessica") is True
+        assert engine._is_blend_formula("af_sarah-af_jessica") is True
+        assert engine._is_blend_formula("0.5*af_sarah") is True
+        assert engine._is_blend_formula("af_heart") is False
+
 
 class TestSilenceTrimming:
     """Tests for silence trimming functionality."""
