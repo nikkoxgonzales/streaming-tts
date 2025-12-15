@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .config import PlaybackConfig
@@ -16,7 +16,7 @@ try:
     PYAUDIO_AVAILABLE = True
 except ImportError:
     PYAUDIO_AVAILABLE = False
-    pyaudio = None  # type: ignore[assignment]
+    pyaudio = None  # type: ignore[no-redef]
 
 
 class AudioPlayer:
@@ -122,7 +122,7 @@ class AudioPlayer:
         with self._lock:
             return self._stream is not None and self._stream.is_active()
 
-    def get_devices(self) -> list[dict]:
+    def get_devices(self) -> list[dict[str, Any]]:
         """
         Get list of available audio output devices.
 
@@ -153,7 +153,7 @@ class AudioPlayer:
         self.start()
         return self
 
-    def __exit__(self, *args) -> None:
+    def __exit__(self, *args: object) -> None:
         """Context manager exit."""
         self.stop()
 
@@ -168,7 +168,7 @@ def is_playback_available() -> bool:
     return PYAUDIO_AVAILABLE
 
 
-def list_audio_devices() -> list[dict]:
+def list_audio_devices() -> list[dict[str, Any]]:
     """
     List available audio output devices.
 

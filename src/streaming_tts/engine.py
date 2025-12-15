@@ -370,7 +370,9 @@ class KokoroTTS:
         Yields:
             PCM16 audio chunks as bytes
         """
-        for audio_float32 in self.synthesize(text):
+        for result in self.synthesize(text):
+            # synthesize() without yield_timing always returns ndarray
+            audio_float32: np.ndarray = result  # type: ignore[assignment]
             audio_int16 = (audio_float32 * 32767).astype(np.int16)
             yield audio_int16.tobytes()
 

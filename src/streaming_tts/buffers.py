@@ -121,7 +121,7 @@ class ChunkBuffer:
             List of chunks (may be empty)
         """
         with self._lock:
-            chunks = []
+            chunks: list[bytes] = []
             while len(self._buffer) > 0 and len(chunks) < max_chunks:
                 chunks.append(self._buffer.popleft())
             return chunks

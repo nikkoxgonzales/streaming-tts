@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import io
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
 if TYPE_CHECKING:
-    import av
+    pass
 
 # Supported output formats
 AudioFormat = Literal["pcm", "wav", "mp3", "opus", "flac", "aac"]
@@ -68,15 +68,19 @@ class StreamingAudioWriter:
             ImportError: If PyAV is not installed
             ValueError: If format is not supported
         """
+        # Declare all attributes upfront with proper types
+        self._format: AudioFormat = format
+        self._sample_rate = sample_rate
+        self._channels = channels
+        self._bitrate = bitrate
+        self._finalized = False
+        self._samples_written = 0
+        self._buffer: io.BytesIO | None = None
+        self._container: Any = None  # av.container.OutputContainer when PyAV is used
+        self._stream: Any = None  # av.audio.stream.AudioStream when PyAV is used
+
         if format == "pcm":
             # PCM passthrough - no encoding needed
-            self._format = format
-            self._container = None
-            self._stream = None
-            self._buffer = None
-            self._sample_rate = sample_rate
-            self._channels = channels
-            self._finalized = False
             return
 
         if format not in FORMAT_CODECS:
@@ -93,14 +97,9 @@ class StreamingAudioWriter:
                 "Install with: pip install streaming-tts[formats]"
             ) from e
 
-        self._format = format
-        self._sample_rate = sample_rate
-        self._channels = channels
-        self._bitrate = bitrate
-
         # Create buffer and container
         self._buffer = io.BytesIO()
-        self._container: av.container.OutputContainer = av.open(
+        self._container = av.open(
             self._buffer,
             mode="w",
             format=FORMAT_CONTAINERS[format],
@@ -108,7 +107,7 @@ class StreamingAudioWriter:
 
         # Create audio stream with codec
         codec_name = FORMAT_CODECS[format]
-        self._stream: av.audio.stream.AudioStream = self._container.add_stream(
+        self._stream = self._container.add_stream(
             codec_name,
             rate=sample_rate,
         )
@@ -118,10 +117,6 @@ class StreamingAudioWriter:
         # Set bitrate for lossy codecs
         if format in ("mp3", "opus", "aac"):
             self._stream.bit_rate = bitrate
-
-        # Track samples for timing
-        self._samples_written = 0
-        self._finalized = False
 
     @property
     def format(self) -> AudioFormat:
@@ -133,12 +128,12 @@ class StreamingAudioWriter:
         """Get the sample rate."""
         return self._sample_rate
 
-    def write_chunk(self, audio_int16: np.ndarray) -> bytes:
+    def write_chunk(self, audio: np.ndarray[Any, Any] | bytes) -> bytes:
         """
         Encode an audio chunk and return the encoded bytes.
 
         Args:
-            audio_int16: PCM16 audio samples as numpy array (int16 or float32)
+            audio: PCM16 audio samples as numpy array (int16 or float32) or bytes
 
         Returns:
             Encoded audio bytes (may be empty if codec buffers internally)
@@ -148,6 +143,9 @@ class StreamingAudioWriter:
         """
         if self._finalized:
             raise RuntimeError("Cannot write to finalized writer")
+
+        # Convert bytes to ndarray if needed
+        audio_int16 = np.frombuffer(audio, dtype=np.int16) if isinstance(audio, bytes) else audio
 
         # Handle PCM passthrough
         if self._format == "pcm":
@@ -181,6 +179,7 @@ class StreamingAudioWriter:
             self._container.mux(packet)
 
         # Get accumulated bytes
+        assert self._buffer is not None  # Always set for non-PCM formats
         result = self._buffer.getvalue()
         self._buffer.seek(0)
         self._buffer.truncate()
@@ -214,6 +213,7 @@ class StreamingAudioWriter:
         self._container.close()
 
         # Get final bytes
+        assert self._buffer is not None  # Always set for non-PCM formats
         result = self._buffer.getvalue()
         return result
 

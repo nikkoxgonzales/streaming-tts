@@ -7,7 +7,7 @@ import contextlib
 import threading
 from collections.abc import AsyncIterator, Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .buffers import AsyncChunkBuffer
 from .config import PlaybackConfig, TTSConfig
@@ -131,7 +131,7 @@ class TTSStream:
         self._text_buffer.clear()
         self._stop_event.clear()
 
-        def generate():
+        def generate() -> None:
             self._playing.set()
             writer: StreamingAudioWriter | None = None
             try:
@@ -184,7 +184,7 @@ class TTSStream:
 
     def play_async(
         self,
-        **kwargs,
+        **kwargs: Any,
     ) -> threading.Thread:
         """
         Non-blocking version of play().
@@ -288,7 +288,7 @@ class TTSStream:
         buffer = AsyncChunkBuffer(max_size=100)
         loop = asyncio.get_running_loop()
 
-        def generate():
+        def generate() -> None:
             self._playing.set()
             writer: StreamingAudioWriter | None = None
             if format != "pcm":
@@ -383,7 +383,7 @@ class TTSStream:
         """Context manager entry."""
         return self
 
-    def __exit__(self, *args) -> None:
+    def __exit__(self, *args: object) -> None:
         """Context manager exit - cleanup resources."""
         self.shutdown()
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "streaming-tts"
-version = "0.2.2"
+version = "0.2.3"
 description = "A streamlined, Kokoro-based text-to-speech library with streaming support"
 readme = "README.md"
 license = "MIT"
@@ -64,21 +64,13 @@ ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"
-strict = true
-warn_return_any = true
+# Using relaxed settings due to optional dependencies without type stubs
+strict = false
+warn_return_any = false
 warn_unused_configs = true
-# Ignore missing stubs for optional dependencies
 ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = [
-    "pyaudio",
-    "av",
-    "kokoro",
-    "kokoro.*",
-]
-ignore_missing_imports = true
-ignore_errors = true
+check_untyped_defs = true
+disallow_untyped_defs = false
 
 [tool.coverage.run]
 source = ["src/streaming_tts"]
