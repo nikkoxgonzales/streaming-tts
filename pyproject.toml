@@ -1,0 +1,83 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "streaming-tts"
+version = "0.1.0"
+description = "A streamlined, Kokoro-based text-to-speech library with streaming support"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [
+    { name = "Nikko Gonzales", email = "nikkoxgonzales@gmail.com" }
+]
+keywords = ["tts", "text-to-speech", "kokoro", "streaming", "audio"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+    "kokoro>=0.9.4",
+    "torch>=2.0.0",
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+formats = ["av>=14.0.0"]
+playback = ["pyaudio>=0.2.13"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.0",
+    "pytest-mock>=3.12",
+    "ruff>=0.4",
+    "mypy>=1.8",
+]
+all = ["streaming-tts[formats,playback,dev]"]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/streaming-tts"
+Repository = "https://github.com/yourusername/streaming-tts"
+Issues = "https://github.com/yourusername/streaming-tts/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/streaming_tts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.coverage.run]
+source = ["src/streaming_tts"]
+branch = true
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
