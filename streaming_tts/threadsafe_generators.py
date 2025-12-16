@@ -33,7 +33,7 @@ class CharIterator:
         _char_index (Optional[int]): Current character index in the current string.
         _current_iterator (Optional[Iterator[str]]): Current iterator being consumed.
         immediate_stop (threading.Event): Event signaling to stop iteration.
-        iterated_text (str): Accumulates the characters that have been iterated over.
+        _iterated_chars (list): Accumulates characters (O(1) append vs O(n) string concat).
         log_characters (bool): If True, logs processed characters.
         on_character (Callable): Callback on each character processed.
         on_first_text_chunk (Callable): Callback on receiving the first text chunk.
@@ -51,8 +51,13 @@ class CharIterator:
     _char_index: Optional[int] = None
     _current_iterator: Optional[Iterator[str]] = None
     immediate_stop: threading.Event = field(default_factory=threading.Event)
-    iterated_text: str = ""
+    _iterated_chars: list = field(default_factory=list)  # O(1) append instead of O(n) string concat
     first_chunk_received: bool = False
+
+    @property
+    def iterated_text(self) -> str:
+        """Returns accumulated text (joining chars on access)."""
+        return ''.join(self._iterated_chars)
 
     def add(self, item: Union[str, Iterator[str]]) -> None:
         """Add a string or a string iterator to the list of items."""
@@ -68,7 +73,7 @@ class CharIterator:
 
     def _log_and_trigger(self, char: str) -> None:
         """Log character and trigger associated callbacks."""
-        self.iterated_text += char
+        self._iterated_chars.append(char)  # O(1) instead of O(n) string concat
         if self.log_characters:
             print(char, end="", flush=True)
         if self.on_character:
@@ -146,10 +151,15 @@ class AccumulatingThreadSafeGenerator:
         self.lock = threading.Lock()
         self.generator = gen_func
         self.exhausted = False
-        self.iterated_text = ""
+        self._iterated_tokens: list = []  # O(1) append instead of O(n) string concat
         self.on_first_text_chunk = on_first_text_chunk
         self.on_last_text_chunk = on_last_text_chunk
         self.first_chunk_received = False
+
+    @property
+    def iterated_text(self) -> str:
+        """Returns accumulated text (joining tokens on access)."""
+        return ''.join(self._iterated_tokens)
 
     def __iter__(self) -> "AccumulatingThreadSafeGenerator":
         """Return the iterator object itself."""
@@ -160,7 +170,7 @@ class AccumulatingThreadSafeGenerator:
         with self.lock:
             try:
                 token = next(self.generator)
-                self.iterated_text += str(token)
+                self._iterated_tokens.append(str(token))  # O(1) instead of O(n)
 
                 if not self.first_chunk_received and self.on_first_text_chunk:
                     self.on_first_text_chunk()
@@ -169,7 +179,7 @@ class AccumulatingThreadSafeGenerator:
                 return token
 
             except StopIteration:
-                if self.iterated_text and self.on_last_text_chunk:
+                if self._iterated_tokens and self.on_last_text_chunk:
                     self.on_last_text_chunk()
                 self.exhausted = True
                 raise
@@ -182,4 +192,4 @@ class AccumulatingThreadSafeGenerator:
     def accumulated_text(self) -> str:
         """Retrieve the accumulated text from the iterated tokens."""
         with self.lock:
-            return self.iterated_text
+            return ''.join(self._iterated_tokens)

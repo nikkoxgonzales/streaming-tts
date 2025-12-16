@@ -7,7 +7,7 @@ Requires:
 
 from .base_engine import BaseEngine, TimingInfo
 from queue import Queue
-from typing import List, Union
+from typing import Union
 import numpy as np
 import traceback
 import pyaudio
@@ -102,11 +102,30 @@ class KokoroEngine(BaseEngine):
         Initializes the KokoroEngine with default settings.
 
         Args:
-            default_lang_code (str): Fallback language code if the voice doesn't specify one.
-            default_voice (str): Default voice to use (e.g., "af_heart").
-            default_speed (float): Default speed factor for speech synthesis.
+            voice (Union[str, KokoroVoice]): Default voice to use (e.g., "af_heart").
+            default_speed (float): Default speed factor for speech synthesis. Must be positive.
+            trim_silence (bool): Whether to trim silence from audio output.
+            silence_threshold (float): Threshold for silence detection (0-1 range).
+            extra_start_ms (int): Extra milliseconds to keep at start after trimming.
+            extra_end_ms (int): Extra milliseconds to keep at end after trimming.
+            fade_in_ms (int): Fade-in duration in milliseconds.
+            fade_out_ms (int): Fade-out duration in milliseconds.
             debug (bool): If True, prints detailed debug output.
         """
+        # Validate parameters
+        if default_speed <= 0:
+            raise ValueError(f"default_speed must be positive, got {default_speed}")
+        if not 0 <= silence_threshold <= 1:
+            raise ValueError(f"silence_threshold must be between 0 and 1, got {silence_threshold}")
+        if extra_start_ms < 0:
+            raise ValueError(f"extra_start_ms must be non-negative, got {extra_start_ms}")
+        if extra_end_ms < 0:
+            raise ValueError(f"extra_end_ms must be non-negative, got {extra_end_ms}")
+        if fade_in_ms < 0:
+            raise ValueError(f"fade_in_ms must be non-negative, got {fade_in_ms}")
+        if fade_out_ms < 0:
+            raise ValueError(f"fade_out_ms must be non-negative, got {fade_out_ms}")
+
         super().__init__()
         self.debug = debug
         self.engine_name = "kokoro"
@@ -403,15 +422,20 @@ class KokoroEngine(BaseEngine):
             self.current_voice = voice.name
         else:
             installed_voices = self.get_voices()
+            # First try exact match
             for installed_voice in installed_voices:
                 if voice == installed_voice.name:
-                    self.current_voice = installed_voice
+                    self.current_voice = installed_voice.name
                     break
+            # Then try partial match
             if self.current_voice is None:
                 for installed_voice in installed_voices:
                     if voice.lower() in installed_voice.name.lower():
-                        self.current_voice = installed_voice
-            self.current_voice = voice  # Fallback to raw string
+                        self.current_voice = installed_voice.name
+                        break
+            # Fallback to raw string only if not found
+            if self.current_voice is None:
+                self.current_voice = voice
 
         # Attempt to detect language from the first relevant voice chunk
         self.current_lang = get_lang_code_from_voice(self.current_voice)

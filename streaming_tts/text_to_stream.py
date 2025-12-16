@@ -268,7 +268,12 @@ class TextToAudioStream:
         """
         Async handling of text to audio synthesis, see play() method.
         """
-        if not self.is_playing_flag:
+        # Use lock to prevent race condition with play()
+        if not self.play_lock.acquire(blocking=False):
+            logging.warning("play_async() called while already playing audio, skipping")
+            return
+
+        try:
             self.is_playing_flag = True
             args = (
                 fast_sentence_fragment,
@@ -294,13 +299,23 @@ class TextToAudioStream:
                 muted,
                 sentence_fragment_delimiters,
                 force_first_fragment_after_words,
-                True,
+                False,  # is_external_call=False since we handle lock here
                 debug,
             )
-            self.play_thread = threading.Thread(target=self.play, args=args)
+            self.play_thread = threading.Thread(target=self._play_async_wrapper, args=args)
             self.play_thread.start()
-        else:
-            logging.warning("play_async() called while already playing audio, skipping")
+        except Exception:
+            self.is_playing_flag = False
+            self.play_lock.release()
+            raise
+
+    def _play_async_wrapper(self, *args):
+        """Wrapper for play() that releases lock when done."""
+        try:
+            self.play(*args)
+        finally:
+            self.is_playing_flag = False
+            self.play_lock.release()
 
     def play(
         self,
@@ -698,7 +713,9 @@ class TextToAudioStream:
 
         if self.play_thread is not None:
             if self.play_thread.is_alive():
-                self.play_thread.join()
+                self.play_thread.join(timeout=10.0)
+                if self.play_thread.is_alive():
+                    logging.warning("Play thread did not terminate within timeout")
             self.play_thread = None
 
         self._create_iterators()

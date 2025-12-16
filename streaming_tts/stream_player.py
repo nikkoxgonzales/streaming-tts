@@ -29,7 +29,6 @@ import pyaudio
 import logging
 import shutil
 import queue
-import time
 import io
 
 
@@ -74,6 +73,9 @@ class AudioStream:
     - opening, starting, stopping, and closing
     """
 
+    # Class-level cache for supported sample rates per device
+    _supported_rates_cache: dict = {}
+
     def __init__(self, config: AudioConfiguration):
         """
         Args:
@@ -88,6 +90,7 @@ class AudioStream:
     def get_supported_sample_rates(self, device_index):
         """
         Test which standard sample rates are supported by the specified device.
+        Results are cached per device to avoid repeated testing (~100ms savings).
 
         Args:
             device_index (int): The index of the audio device to test
@@ -95,6 +98,11 @@ class AudioStream:
         Returns:
             list: List of supported sample rates
         """
+        # Check cache first
+        cache_key = (device_index, self.config.format)
+        if cache_key in AudioStream._supported_rates_cache:
+            return AudioStream._supported_rates_cache[cache_key]
+
         standard_rates = [8000, 9600, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000]
         supported_rates = []
 
@@ -111,8 +119,11 @@ class AudioStream:
                     output_format=self.config.format,
                 ):
                     supported_rates.append(rate)
-            except:
+            except (ValueError, OSError):
                 continue
+
+        # Cache the result
+        AudioStream._supported_rates_cache[cache_key] = supported_rates
         return supported_rates
 
     def _get_best_sample_rate(self, device_index, desired_rate):
@@ -245,28 +256,25 @@ class AudioStream:
                     output=True,
                 )
             except Exception as e:
-                print(
-                    "Error opening stream with parameters:"
-                    f" format={pyFormat}, channels={pyChannels}, rate={best_rate}, output_device_index={pyOutput_device_index}"
-                    f"Error message: {e}")
+                error_msg = (
+                    f"Error opening stream with parameters: "
+                    f"format={pyFormat}, channels={pyChannels}, rate={best_rate}, "
+                    f"output_device_index={pyOutput_device_index}. Error: {e}"
+                )
+                logging.error(error_msg)
 
-                # Get the number of available audio devices
+                # Log available audio devices for debugging
                 device_count = self.pyaudio_instance.get_device_count()
-
-                print("Available Audio Devices:\n")
-
-                # Iterate through all devices and print their details
+                logging.info("Available Audio Devices:")
                 for i in range(device_count):
                     device_info = self.pyaudio_instance.get_device_info_by_index(i)
-                    print(f"Device Index: {i}")
-                    print(f"  Name: {device_info['name']}")
-                    print(f"  Sample Rate (Default): {device_info['defaultSampleRate']} Hz")
-                    print(f"  Max Input Channels: {device_info['maxInputChannels']}")
-                    print(f"  Max Output Channels: {device_info['maxOutputChannels']}")
-                    print(f"  Host API: {self.pyaudio_instance.get_host_api_info_by_index(device_info['hostApi'])['name']}")
-                    print("\n")
+                    logging.info(
+                        f"  Device {i}: {device_info['name']} "
+                        f"(rate={device_info['defaultSampleRate']}Hz, "
+                        f"out_ch={device_info['maxOutputChannels']})"
+                    )
 
-                exit(0)
+                raise RuntimeError(error_msg) from e
 
     def start_stream(self):
         """Starts the audio stream."""
@@ -304,6 +312,17 @@ class AudioBufferManager:
     """
     Manages an audio buffer, allowing addition and retrieval of audio data.
     """
+
+    # Class constant for format to bytes mapping
+    FORMAT_BYTES = {
+        pyaudio.paCustomFormat: 4,
+        pyaudio.paFloat32: 4,
+        pyaudio.paInt32: 4,
+        pyaudio.paInt24: 3,
+        pyaudio.paInt16: 2,
+        pyaudio.paInt8: 1,
+        pyaudio.paUInt8: 1,
+    }
 
     def __init__(
             self,
@@ -344,13 +363,13 @@ class AudioBufferManager:
                 continue
         self.total_samples = 0
 
-    def get_from_buffer(self, timeout: float = 0.05):
+    def get_from_buffer(self, timeout: float = 0.01):
         """
         Retrieves audio data from the buffer.
 
         Args:
             timeout (float): Time (in seconds) to wait
-              before raising a queue.Empty exception.
+              before raising a queue.Empty exception. Default reduced to 10ms for lower latency.
 
         Returns:
             The audio data chunk or None if the buffer is empty.
@@ -358,29 +377,19 @@ class AudioBufferManager:
         try:
             chunk = self.audio_buffer.get(timeout=timeout)
 
-            # Map PyAudio format to bytes per sample
-            format_bytes = {
-                pyaudio.paCustomFormat: 4,
-                pyaudio.paFloat32: 4,
-                pyaudio.paInt32: 4,
-                pyaudio.paInt24: 3,
-                pyaudio.paInt16: 2,
-                pyaudio.paInt8: 1,
-                pyaudio.paUInt8: 1
-            }
-
             # Get format and channels from config
             audio_format = self.config.format
             channels = self.config.channels
 
             # Log if format is unknown
-            if audio_format not in format_bytes:
-                print(f"Warning: Unknown audio format {audio_format} (0x{audio_format:x})")
-                print(f"Available formats: {[hex(k) for k in format_bytes.keys()]}")
-                format_bytes[audio_format] = 4  # Default to 4 bytes
+            if audio_format not in self.FORMAT_BYTES:
+                logging.warning(f"Unknown audio format {audio_format} (0x{audio_format:x}), defaulting to 4 bytes")
+                bytes_per_sample = 4
+            else:
+                bytes_per_sample = self.FORMAT_BYTES[audio_format]
 
             # Calculate bytes per frame
-            bytes_per_frame = format_bytes[audio_format] * channels
+            bytes_per_frame = bytes_per_sample * channels
 
             # Update total samples counter
             if chunk:
@@ -440,6 +449,7 @@ class StreamPlayer:
         self.playback_active = False
         self.immediate_stop = threading.Event()
         self.pause_event = threading.Event()
+        self.playback_done = threading.Event()
         self.playback_thread = None
         self.on_playback_start = on_playback_start
         self.on_playback_stop = on_playback_stop
@@ -587,17 +597,20 @@ class StreamPlayer:
         Processes and plays audio data from the buffer
         until it's empty or playback is stopped.
         """
-        while self.playback_active or not self.buffer_manager.audio_buffer.empty():
-            success, chunk = self.buffer_manager.get_from_buffer()
-            if chunk:
-                self._play_chunk(chunk)
+        try:
+            while self.playback_active or not self.buffer_manager.audio_buffer.empty():
+                success, chunk = self.buffer_manager.get_from_buffer()
+                if chunk:
+                    self._play_chunk(chunk)
 
-            if self.immediate_stop.is_set():
-                logging.info("Immediate stop requested, aborting playback")
-                break
+                if self.immediate_stop.is_set():
+                    logging.info("Immediate stop requested, aborting playback")
+                    break
 
-        if self.on_playback_stop:
-            self.on_playback_stop()
+            if self.on_playback_stop:
+                self.on_playback_stop()
+        finally:
+            self.playback_done.set()
 
     def get_buffered_seconds(self) -> float:
         """
@@ -615,6 +628,7 @@ class StreamPlayer:
         """Starts audio playback."""
         self.first_chunk_played = False
         self.playback_active = True
+        self.playback_done.clear()
         if not self.audio_stream.stream:
             self.audio_stream.open_stream()
 
@@ -633,21 +647,19 @@ class StreamPlayer:
               without waiting for buffer to empty.
         """
         if not self.playback_thread:
-            logging.warn("No playback thread found, cannot stop playback")
+            logging.warning("No playback thread found, cannot stop playback")
             return
 
         if immediate:
             self.immediate_stop.set()
-            while self.playback_active:
-                time.sleep(0.001)
-            return
-
-        self.playback_active = False
-
-        if self.playback_thread and self.playback_thread.is_alive():
-            self.playback_thread.join()
-
-        time.sleep(0.001)
+            # Wait for playback to finish with timeout instead of busy-wait
+            if not self.playback_done.wait(timeout=5.0):
+                logging.warning("Playback did not stop within timeout")
+            self.playback_active = False
+        else:
+            self.playback_active = False
+            if self.playback_thread and self.playback_thread.is_alive():
+                self.playback_thread.join(timeout=10.0)
 
         self.audio_stream.close_stream()
         self.immediate_stop.clear()

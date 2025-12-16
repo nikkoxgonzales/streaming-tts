@@ -5,7 +5,7 @@ Includes pause tag support and smart text chunking.
 
 import re
 from dataclasses import dataclass
-from typing import Generator, List, Optional, Tuple, Union
+from typing import Generator, List, Optional, Union
 
 from .text_normalizer import NormalizationOptions, normalize_text
 

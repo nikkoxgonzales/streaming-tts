@@ -1,3 +1,7 @@
+![streaming-tts.jpg](streaming-tts.jpg)
+
+---
+
 # streaming-tts
 
 Lightweight streaming text-to-speech with Kokoro engine.
