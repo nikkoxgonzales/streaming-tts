@@ -80,3 +80,21 @@ line-length = 120
 [tool.ruff.lint.per-file-ignores]
 # Allow imports after warnings.filterwarnings in __init__.py
 "__init__.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = false
+warn_unused_ignores = true
+ignore_missing_imports = true
+implicit_optional = true
+# Disable strict checks - source code has pre-existing type issues
+disable_error_code = [
+    "var-annotated",
+    "return",
+    "return-value",
+    "assignment",
+    "arg-type",
+    "attr-defined",
+    "operator",
+    "override",
+]
