@@ -1,0 +1,45 @@
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Environment and secrets
+.env
+.env.local
+
+# Project specific
+upload_to_pypi.py
+claude_temp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Custom Files
+publishing.txt
+publish.py
+info-graphic-prompt.txt
+job-logs.txt
