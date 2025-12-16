@@ -61,6 +61,7 @@ all = [
 ]
 dev = [
     "pytest>=7.0",
+    "pytest-cov>=4.0",
     "mypy",
     "ruff",
 ]
@@ -75,3 +76,7 @@ where = ["."]
 
 [tool.ruff]
 line-length = 120
+
+[tool.ruff.lint.per-file-ignores]
+# Allow imports after warnings.filterwarnings in __init__.py
+"__init__.py" = ["E402"]
