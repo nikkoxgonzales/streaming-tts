@@ -21,6 +21,7 @@ try:
 except ImportError:
     print("Could not import the PyAudio C module 'pyaudio._portaudio'.")
     raise
+from typing import TYPE_CHECKING, Optional
 import numpy as np
 import subprocess
 import threading
@@ -29,7 +30,11 @@ import pyaudio
 import logging
 import shutil
 import queue
+import time
 import io
+
+if TYPE_CHECKING:
+    from .diagnostics import PlaybackDiagnostics
 
 
 class AudioConfiguration:
@@ -411,6 +416,218 @@ class AudioBufferManager:
         return self.total_samples / rate
 
 
+class CrossfadingBuffer:
+    """
+    Manages audio chunks with crossfading at boundaries.
+
+    When a new chunk arrives, it overlaps with the tail of the previous
+    chunk using a configurable crossfade duration. This smooths transitions
+    between audio chunks and reduces clicks/pops at boundaries.
+
+    Optionally normalizes silence at chunk boundaries for more consistent
+    pauses between sentences.
+    """
+
+    def __init__(
+        self,
+        crossfade_ms: float = 25.0,
+        sample_rate: int = 24000,
+        channels: int = 1,
+        sample_width: int = 2,  # bytes per sample (2 for int16)
+        normalize_boundaries: bool = True,
+        silence_threshold: int = 500,  # int16 amplitude threshold
+        target_silence_ms: float = 5.0,  # target silence at boundaries
+    ):
+        """
+        Args:
+            crossfade_ms: Duration of crossfade in milliseconds. Default 25ms.
+            sample_rate: Audio sample rate in Hz.
+            channels: Number of audio channels.
+            sample_width: Bytes per sample (2 for int16, 4 for float32).
+            normalize_boundaries: If True, normalizes silence at chunk
+                boundaries for consistent pauses. Default True.
+            silence_threshold: Amplitude threshold for silence detection.
+            target_silence_ms: Target silence duration at chunk end after
+                normalization. Default 5ms.
+        """
+        self.crossfade_ms = crossfade_ms
+        self.sample_rate = sample_rate
+        self.channels = channels
+        self.sample_width = sample_width
+        self.crossfade_samples = int(crossfade_ms * sample_rate / 1000)
+        self.normalize_boundaries = normalize_boundaries
+        self.silence_threshold = silence_threshold
+        self.target_silence_samples = int(target_silence_ms * sample_rate / 1000)
+        self._pending_tail: Optional[np.ndarray] = None
+        self._lock = threading.Lock()
+
+    def _normalize_chunk_boundaries(self, audio: np.ndarray) -> np.ndarray:
+        """
+        Normalize silence at chunk boundaries for consistent pauses.
+
+        Trims trailing silence and adds a consistent target silence duration.
+
+        Args:
+            audio: Audio samples as float32 array.
+
+        Returns:
+            Normalized audio array.
+        """
+        if len(audio) == 0:
+            return audio
+
+        # For float32 audio, convert threshold
+        threshold = self.silence_threshold
+        if self.sample_width == 4:
+            threshold = self.silence_threshold / 32768.0
+
+        # Handle multi-channel: work on mono representation for silence detection
+        if self.channels > 1 and len(audio.shape) > 1:
+            mono = np.mean(np.abs(audio), axis=1)
+        else:
+            mono = np.abs(audio)
+
+        # Trim trailing silence
+        non_silent = np.where(mono > threshold)[0]
+        if len(non_silent) > 0:
+            last_non_silent = non_silent[-1]
+            # Keep a small amount of audio after last non-silent sample
+            trim_point = min(last_non_silent + self.target_silence_samples, len(audio))
+            audio = audio[:trim_point]
+
+        # Trim leading silence (but keep minimal)
+        if len(non_silent) > 0:
+            first_non_silent = non_silent[0]
+            # Allow up to target_silence_samples of leading silence
+            if first_non_silent > self.target_silence_samples:
+                audio = audio[first_non_silent - self.target_silence_samples:]
+
+        return audio
+
+    def process(self, chunk_bytes: bytes) -> bytes:
+        """
+        Process an audio chunk and apply crossfading with the previous chunk.
+
+        The crossfading algorithm:
+        1. Normalize boundaries (trim excess silence, add consistent silence)
+        2. Extract the first crossfade_samples from the new chunk
+        3. If there's a pending tail from the previous chunk:
+           - Apply fade-out to pending tail
+           - Apply fade-in to new chunk head
+           - Sum them together (crossfade)
+        4. Store the last crossfade_samples as the new pending tail
+        5. Return the processed audio
+
+        Args:
+            chunk_bytes: Raw audio data as bytes.
+
+        Returns:
+            Processed audio data with crossfading applied.
+        """
+        with self._lock:
+            # Handle zero crossfade (passthrough mode)
+            if self.crossfade_samples == 0:
+                return chunk_bytes
+
+            # Convert bytes to numpy array
+            if self.sample_width == 2:
+                audio = np.frombuffer(chunk_bytes, dtype=np.int16).astype(np.float32)
+            else:
+                audio = np.frombuffer(chunk_bytes, dtype=np.float32)
+
+            # Handle multi-channel audio
+            if self.channels > 1:
+                audio = audio.reshape(-1, self.channels)
+
+            # Normalize boundaries before crossfading
+            if self.normalize_boundaries:
+                audio = self._normalize_chunk_boundaries(audio)
+
+            output_parts = []
+
+            # If we have a pending tail and enough samples in new chunk, crossfade
+            if self._pending_tail is not None and len(audio) >= self.crossfade_samples:
+                # Create crossfade curves
+                fade_out = np.linspace(1.0, 0.0, self.crossfade_samples)
+                fade_in = np.linspace(0.0, 1.0, self.crossfade_samples)
+
+                # Reshape for multi-channel
+                if self.channels > 1:
+                    fade_out = fade_out.reshape(-1, 1)
+                    fade_in = fade_in.reshape(-1, 1)
+
+                # Apply crossfade
+                tail_faded = self._pending_tail * fade_out
+                head_faded = audio[: self.crossfade_samples] * fade_in
+                crossfaded = tail_faded + head_faded
+
+                output_parts.append(crossfaded)
+                audio = audio[self.crossfade_samples :]
+
+            elif self._pending_tail is not None:
+                # Chunk too short for crossfading, just output the tail
+                output_parts.append(self._pending_tail)
+
+            # Store new tail if chunk is long enough
+            if len(audio) > self.crossfade_samples:
+                self._pending_tail = audio[-self.crossfade_samples :].copy()
+                audio = audio[: -self.crossfade_samples]
+                output_parts.append(audio)
+            elif len(audio) > 0:
+                # Chunk too short, don't hold a tail
+                output_parts.append(audio)
+                self._pending_tail = None
+            else:
+                # No audio left after crossfading
+                pass
+
+            # Combine all parts
+            if output_parts:
+                combined = np.concatenate(output_parts)
+            else:
+                combined = np.array([], dtype=np.float32)
+
+            # Flatten multi-channel
+            if self.channels > 1 and len(combined) > 0:
+                combined = combined.flatten()
+
+            # Convert back to bytes
+            if self.sample_width == 2:
+                return np.clip(combined, -32768, 32767).astype(np.int16).tobytes()
+            else:
+                return combined.astype(np.float32).tobytes()
+
+    def flush(self) -> bytes:
+        """
+        Return any pending tail as final output.
+
+        Call this when playback is stopping to ensure the last
+        crossfade_samples worth of audio is played.
+
+        Returns:
+            Final audio data or empty bytes.
+        """
+        with self._lock:
+            if self._pending_tail is not None:
+                tail = self._pending_tail
+                self._pending_tail = None
+
+                # Flatten multi-channel
+                if self.channels > 1 and len(tail) > 0:
+                    tail = tail.flatten()
+
+                if self.sample_width == 2:
+                    return tail.astype(np.int16).tobytes()
+                else:
+                    return tail.astype(np.float32).tobytes()
+            return b""
+
+    def reset(self) -> None:
+        """Clear the crossfade buffer."""
+        with self._lock:
+            self._pending_tail = None
+
+
 class StreamPlayer:
     """
     Manages audio playback operations such as start, stop, pause, and resume.
@@ -426,6 +643,9 @@ class StreamPlayer:
         on_audio_chunk=None,
         on_word_spoken=None,
         muted=False,
+        diagnostics: Optional["PlaybackDiagnostics"] = None,
+        enable_crossfade: bool = True,
+        crossfade_ms: float = 25.0,
     ):
         """
         Args:
@@ -441,6 +661,12 @@ class StreamPlayer:
               being written to the output device/file. Defaults to None.
             on_word_spoken (Callable, optional): Callback for word timing events.
             muted (bool): Initial muted state.
+            diagnostics (PlaybackDiagnostics, optional): Diagnostics collector
+              for tracking playback timing. Defaults to None.
+            enable_crossfade (bool): If True, enables crossfading between audio
+              chunks to smooth transitions. Defaults to True.
+            crossfade_ms (float): Duration of crossfade in milliseconds.
+              Defaults to 15.0ms.
         """
         self.buffer_manager = AudioBufferManager(audio_buffer, timings, config)
         self.timings = timings
@@ -458,6 +684,12 @@ class StreamPlayer:
         self.first_chunk_played = False
         self.muted = muted
         self.seconds_played = 0
+        self.diagnostics = diagnostics
+        self._current_chunk_id = 0  # Track which chunk is being played
+        self._last_buffer_log_time = 0.0  # For periodic buffer logging
+        self.enable_crossfade = enable_crossfade
+        self.crossfade_ms = crossfade_ms
+        self.crossfade_buffer: Optional[CrossfadingBuffer] = None
 
     def _play_mpeg_chunk(self, chunk):
         """
@@ -588,7 +820,13 @@ class StreamPlayer:
 
         if is_mpeg_stream:
             self._play_mpeg_chunk(chunk)
-            return # Finished processing MPEG chunk
+            return  # Finished processing MPEG chunk
+
+        # Apply crossfading if enabled
+        if self.crossfade_buffer is not None:
+            chunk = self.crossfade_buffer.process(chunk)
+            if not chunk:  # Chunk absorbed into crossfade buffer
+                return
 
         self._play_wav_chunk(chunk)
 
@@ -601,7 +839,24 @@ class StreamPlayer:
             while self.playback_active or not self.buffer_manager.audio_buffer.empty():
                 success, chunk = self.buffer_manager.get_from_buffer()
                 if chunk:
+                    # Record playback start for this chunk
+                    if self.diagnostics:
+                        self.diagnostics.record_playback_start(self._current_chunk_id)
+
                     self._play_chunk(chunk)
+
+                    # Record playback end and move to next chunk
+                    if self.diagnostics:
+                        self.diagnostics.record_playback_end(self._current_chunk_id)
+                        self._current_chunk_id += 1
+
+                        # Periodic buffer state logging (every 100ms)
+                        now = time.perf_counter()
+                        if now - self._last_buffer_log_time > 0.1:
+                            buffered_secs = self.get_buffered_seconds()
+                            sample_count = self.buffer_manager.total_samples
+                            self.diagnostics.record_buffer_state(sample_count, buffered_secs)
+                            self._last_buffer_log_time = now
 
                 if self.immediate_stop.is_set():
                     logging.info("Immediate stop requested, aborting playback")
@@ -629,8 +884,24 @@ class StreamPlayer:
         self.first_chunk_played = False
         self.playback_active = True
         self.playback_done.clear()
+        self._current_chunk_id = 0  # Reset chunk counter for diagnostics
+        self._last_buffer_log_time = 0.0
         if not self.audio_stream.stream:
             self.audio_stream.open_stream()
+
+        # Initialize crossfade buffer if enabled
+        if self.enable_crossfade and self.audio_stream.config.rate > 0:
+            sample_width = 2  # Default to int16
+            if self.audio_stream.config.format == pyaudio.paFloat32:
+                sample_width = 4
+            self.crossfade_buffer = CrossfadingBuffer(
+                crossfade_ms=self.crossfade_ms,
+                sample_rate=self.audio_stream.actual_sample_rate or self.audio_stream.config.rate,
+                channels=self.audio_stream.config.channels,
+                sample_width=sample_width,
+            )
+        else:
+            self.crossfade_buffer = None
 
         self.audio_stream.start_stream()
 
@@ -660,6 +931,13 @@ class StreamPlayer:
             self.playback_active = False
             if self.playback_thread and self.playback_thread.is_alive():
                 self.playback_thread.join(timeout=10.0)
+
+        # Flush crossfade buffer before closing stream
+        if self.crossfade_buffer is not None and not immediate:
+            final_audio = self.crossfade_buffer.flush()
+            if final_audio:
+                self._play_wav_chunk(final_audio)
+            self.crossfade_buffer.reset()
 
         self.audio_stream.close_stream()
         self.immediate_stop.clear()
