@@ -14,7 +14,8 @@ Converts text into real-time audio using one or more TTS engines. Key features i
 
 from .threadsafe_generators import CharIterator, AccumulatingThreadSafeGenerator
 from .stream_player import StreamPlayer, AudioConfiguration
-from typing import Union, Iterator, List
+from .diagnostics import PlaybackDiagnostics
+from typing import Union, Iterator, List, Optional
 from .base_engine import BaseEngine
 try:
     import pyaudio._portaudio as pa
@@ -49,6 +50,9 @@ class TextToAudioStream:
         frames_per_buffer: int = pa.paFramesPerBufferUnspecified,
         playout_chunk_size: int = -1,
         level=logging.WARNING,
+        enable_diagnostics: bool = False,
+        enable_crossfade: bool = True,
+        crossfade_ms: float = 25.0,
     ):
         """
         Initializes the TextToAudioStream.
@@ -141,6 +145,21 @@ class TextToAudioStream:
                 The logging level to use for internal logging. Accepts standard
                 Python logging levels, such as `logging.DEBUG`, `logging.INFO`,
                 `logging.WARNING`, etc. Defaults to `logging.WARNING`.
+
+            enable_diagnostics (bool, optional):
+                If True, enables collection of timing diagnostics for audio
+                playback analysis. Access via `stream.diagnostics` after playback.
+                Use `stream.diagnostics.print_report()` to see gap analysis.
+                Defaults to False.
+
+            enable_crossfade (bool, optional):
+                If True, enables crossfading between audio chunks to smooth
+                transitions and reduce clicks/pops at chunk boundaries.
+                Defaults to True.
+
+            crossfade_ms (float, optional):
+                Duration of crossfade in milliseconds. Higher values produce
+                smoother transitions but add slight latency. Defaults to 25.0ms.
         """
         self.log_characters = log_characters
         self.on_text_stream_start = on_text_stream_start
@@ -161,6 +180,12 @@ class TextToAudioStream:
         self.player = None
         self.play_lock = threading.Lock()
         self.is_playing_flag = False
+        self.enable_diagnostics = enable_diagnostics
+        self.diagnostics: Optional[PlaybackDiagnostics] = (
+            PlaybackDiagnostics(enabled=True) if enable_diagnostics else None
+        )
+        self.enable_crossfade = enable_crossfade
+        self.crossfade_ms = crossfade_ms
 
         self._create_iterators()
 
@@ -221,6 +246,9 @@ class TextToAudioStream:
             config,
             on_playback_start=self._on_audio_stream_start,
             on_word_spoken=self._on_word_spoken,
+            diagnostics=self.diagnostics,
+            enable_crossfade=self.enable_crossfade,
+            crossfade_ms=self.crossfade_ms,
         )
 
         logging.info(f"loaded engine {self.engine.engine_name}")
@@ -406,6 +434,11 @@ class TextToAudioStream:
         abort_event = threading.Event()
         self.abort_events.append(abort_event)
 
+        # Reset and start diagnostics session
+        if self.diagnostics:
+            self.diagnostics.reset()
+            self.diagnostics.start_session()
+
         if self.player:
             self.player.mute(muted)
         elif hasattr(self.engine, "set_muted"):
@@ -518,6 +551,10 @@ class TextToAudioStream:
                             break
 
                         sentence_count += 1
+                        chunk_id = -1
+                        if self.diagnostics:
+                            chunk_id = self.diagnostics.get_next_chunk_id()
+                            self.diagnostics.record_synthesis_start(chunk_id, sentence)
 
                         synthesis_successful = False
                         if log_synthesized_text:
@@ -532,6 +569,12 @@ class TextToAudioStream:
                                     before_sentence_synthesized(sentence)
 
                                 success = self.engine.synthesize(sentence)
+
+                                # Record synthesis end timing
+                                if self.diagnostics and chunk_id >= 0:
+                                    audio_duration_ms = self.engine.audio_duration * 1000
+                                    self.diagnostics.record_synthesis_end(chunk_id, audio_duration_ms)
+                                    self.diagnostics.record_queue_put(chunk_id)
 
                                 # insert potential silence
                                 stream_format, _, sample_rate = self.engine.get_stream_info()
