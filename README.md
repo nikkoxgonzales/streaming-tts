@@ -1,23 +1,16 @@
-![streaming-tts.jpg](streaming-tts.jpg)
-
----
-
 # streaming-tts
 
-A streamlined, Kokoro-based text-to-speech library with streaming support.
-
-Extracted and simplified from [RealtimeTTS](https://github.com/KoljaB/RealtimeTTS), focused on the excellent [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) TTS model.
+Lightweight streaming text-to-speech with Kokoro engine.
 
 ## Features
 
-- **Streaming-first design**: Generate audio chunks as they're synthesized
-- **Multiple patterns**: Callback-based, async iterator, or sync iterator
-- **Kokoro TTS**: High-quality, lightweight local TTS (82M parameters)
-- **Voice blending**: Mix voices with flexible syntax
-- **Format conversion**: Output PCM, WAV, MP3, Opus, FLAC, or AAC
-- **GPU support**: Auto-detects CUDA, MPS (Apple Silicon), or CPU with memory management
-- **Optional playback**: Local audio playback for development/testing
-- **Modern Python**: Requires Python 3.12+
+- **Streaming TTS**: Real-time audio synthesis with callback support
+- **Voice Blending**: Mix multiple voices with weighted formulas
+- **Pause Tags**: Insert natural pauses with `[pause:1.5s]` syntax
+- **Text Normalization**: Convert URLs, emails, numbers, money to spoken form
+- **Smart Chunking**: Token-aware text splitting for optimal quality
+- **Multi-Format Output**: Export to WAV, MP3, Opus, FLAC, AAC (with `[audio]` extra)
+- **54 Voices**: American, British English + 7 other languages
 
 ## Installation
 
@@ -25,283 +18,181 @@ Extracted and simplified from [RealtimeTTS](https://github.com/KoljaB/RealtimeTT
 pip install streaming-tts
 ```
 
+For development installation:
+```bash
+pip install -e .
+```
+
+### Optional Extras
+
+```bash
+# Japanese language support
+pip install streaming-tts[jp]
+
+# Chinese language support
+pip install streaming-tts[zh]
+
+# Korean language support
+pip install streaming-tts[ko]
+
+# All features
+pip install streaming-tts[all]
+```
+
+**Note:** Non-English languages require `espeak-ng` to be installed on your system.
+
 ## Quick Start
 
-### Simple Playback
-
 ```python
-from streaming_tts import TTSStream
+from streaming_tts import TextToAudioStream, KokoroEngine
 
-stream = TTSStream()
-stream.feed("Hello world").play()
+# Initialize the engine
+engine = KokoroEngine(voice="af_heart")
+
+# Create stream and play
+stream = TextToAudioStream(engine)
+stream.feed("Hello, world! This is a test of streaming text to speech.").play()
 ```
 
-### Callback Pattern (WebSocket Streaming)
+## Pause Tags
+
+Insert natural pauses in your text:
 
 ```python
-from streaming_tts import TTSStream
-
-stream = TTSStream()
-
-def send_to_client(chunk: bytes):
-    websocket.send_bytes(chunk)
-
-stream.feed("Hello world").play(on_chunk=send_to_client, muted=True)
+text = "Hello! [pause:1s] How are you? [pause:500ms] I hope you're well."
+stream.feed(text).play()
 ```
 
-### Async Iterator Pattern
+## Text Normalization
+
+Automatically convert special content to spoken form:
 
 ```python
-from streaming_tts import TTSStream
+from streaming_tts import normalize_text, NormalizationOptions
 
-stream = TTSStream()
-stream.feed("Hello world")
+options = NormalizationOptions(normalize=True)
 
-async for chunk in stream.stream_async():
-    await websocket.send_bytes(chunk)
+# URLs, emails, numbers, money, etc.
+text = "Visit https://example.com or email user@test.com. Price: $42.50"
+normalized = normalize_text(text, options)
+# -> "Visit https example dot com or email user at test dot com. Price: forty-two dollars and fifty cents"
 ```
 
-### Sync Iterator Pattern
+## Smart Chunking
+
+Split long text into optimal chunks for TTS:
 
 ```python
-from streaming_tts import TTSStream
+from streaming_tts import smart_split, process_text_with_pauses
+import time
 
-stream = TTSStream()
-stream.feed("Hello world")
-
-for chunk in stream.stream():
-    process(chunk)
+# Process text with pauses
+for item in process_text_with_pauses(text, normalize=True):
+    if isinstance(item, float):
+        time.sleep(item)  # Pause
+    else:
+        stream.feed(item).play()  # Speak
 ```
 
-## Configuration
-
-### TTS Configuration
+## Multi-Format Audio Export
 
 ```python
-from streaming_tts import TTSStream, TTSConfig
+from streaming_tts import StreamingAudioWriter
 
-config = TTSConfig(
-    voice="af_heart",           # Voice name or blend formula
-    speed=1.0,                  # Speech speed (1.0 = normal)
-    device=None,                # "cuda", "mps", "cpu", or None (auto-detect)
-    trim_silence=True,          # Trim leading/trailing silence
-    silence_threshold=0.005,
-    memory_threshold_gb=2.0,    # GPU memory threshold for auto-clearing
-)
+# Requires: pip install streaming-tts[audio]
+writer = StreamingAudioWriter("mp3", sample_rate=24000)
 
-stream = TTSStream(config=config)
+for audio_chunk in audio_chunks:
+    mp3_data = writer.write_chunk(audio_chunk)
+    # Stream or save mp3_data
+
+final_data = writer.write_chunk(finalize=True)
+writer.close()
 ```
 
-### Available Voices
+## Usage with Callbacks
 
 ```python
-stream = TTSStream()
-voices = stream.get_voices()
-print(voices)
-# ['af_heart', 'af_alloy', 'am_adam', 'bf_alice', 'jf_alpha', ...]
+from streaming_tts import TextToAudioStream, KokoroEngine
+
+def on_audio_chunk(chunk):
+    # Process audio chunk (e.g., send over websocket)
+    pass
+
+def on_stream_stop():
+    print("Audio stream finished")
+
+engine = KokoroEngine(voice="af_heart")
+stream = TextToAudioStream(engine, on_audio_stream_stop=on_stream_stop)
+stream.feed("Hello world").play(muted=True, on_audio_chunk=on_audio_chunk)
 ```
 
-Voice prefixes indicate language:
-- `af_`, `am_`: American English
-- `bf_`, `bm_`: British English
-- `jf_`, `jm_`: Japanese
-- `zf_`, `zm_`: Mandarin Chinese
-- `ef_`, `em_`: Spanish
-- `ff_`: French
-- `hf_`, `hm_`: Hindi
-- `if_`, `im_`: Italian
-- `pf_`, `pm_`: Brazilian Portuguese
+## Available Voices
 
-### Voice Blending
+### American English (lang_code='a')
+- Female: `af_heart`, `af_alloy`, `af_aoede`, `af_bella`, `af_jessica`, `af_kore`, `af_nicole`, `af_nova`, `af_river`, `af_sarah`, `af_sky`
+- Male: `am_adam`, `am_echo`, `am_eric`, `am_fenrir`, `am_liam`, `am_michael`, `am_onyx`, `am_puck`, `am_santa`
 
-Mix multiple voices with flexible syntax:
+### British English (lang_code='b')
+- Female: `bf_alice`, `bf_emma`, `bf_isabella`, `bf_lily`
+- Male: `bm_daniel`, `bm_fable`, `bm_george`, `bm_lewis`
 
-```python
-stream = TTSStream()
+### Other Languages
+- Japanese: `jf_alpha`, `jf_gongitsune`, `jf_nezumi`, `jf_tebukuro`, `jm_kumo`
+- Chinese: `zf_xiaobei`, `zf_xiaoni`, `zf_xiaoxiao`, `zf_xiaoyi`, `zm_yunjian`, `zm_yunxi`, `zm_yunxia`, `zm_yunyang`
+- Spanish: `ef_dora`, `em_alex`, `em_santa`
+- French: `ff_siwis`
+- Hindi: `hf_alpha`, `hf_beta`, `hm_omega`, `hm_psi`
+- Italian: `if_sara`, `im_nicola`
+- Portuguese: `pf_dora`, `pm_alex`, `pm_santa`
 
-# New style - equal blend (recommended)
-stream.set_voice("af_sarah+af_jessica")
+## Voice Blending
 
-# New style - weighted blend
-stream.set_voice("af_sarah(0.3)+af_jessica(0.7)")
-
-# Old style - also supported
-stream.set_voice("0.3*af_sarah + 0.7*am_adam")
-
-# Subtraction (experimental)
-stream.set_voice("af_sarah-af_jessica")
-
-stream.feed("Blended voice speaking").play()
-```
-
-### Playback Configuration
+You can blend multiple voices using weighted formulas:
 
 ```python
-from streaming_tts import TTSStream, PlaybackConfig
-
-playback = PlaybackConfig(
-    device_index=None,     # Audio device (None = default)
-    frames_per_buffer=512, # Buffer size
-    muted=False,           # Skip actual playback
-)
-
-stream = TTSStream(playback_config=playback)
+engine = KokoroEngine(voice="0.3*af_sarah + 0.7*am_adam")
 ```
 
 ## API Reference
 
-### TTSStream
-
-Main class for TTS streaming.
+### KokoroEngine
 
 ```python
-class TTSStream:
-    def __init__(
-        self,
-        config: TTSConfig | None = None,
-        playback_config: PlaybackConfig | None = None,
-    ) -> None: ...
-
-    def feed(self, text: str) -> TTSStream: ...
-    def clear(self) -> TTSStream: ...
-    def play(
-        self,
-        *,
-        on_chunk: Callable[[bytes], None] | None = None,
-        on_start: Callable[[], None] | None = None,
-        on_stop: Callable[[], None] | None = None,
-        muted: bool | None = None,
-        blocking: bool = True,
-        format: AudioFormat = "pcm",  # pcm, wav, mp3, opus, flac, aac
-    ) -> threading.Thread | None: ...
-    def play_async(self, **kwargs) -> threading.Thread: ...
-    def stream(self, format: AudioFormat = "pcm") -> Iterator[bytes]: ...
-    async def stream_async(self, format: AudioFormat = "pcm") -> AsyncIterator[bytes]: ...
-    def stop(self) -> None: ...
-    def is_playing(self) -> bool: ...
-    def set_voice(self, voice: str) -> TTSStream: ...
-    def get_voices(self) -> list[str]: ...
-    def shutdown(self) -> None: ...
+KokoroEngine(
+    voice="af_heart",        # Voice name or blend formula
+    default_speed=1.0,       # Speech speed multiplier
+    trim_silence=True,       # Remove silence from audio
+    debug=False              # Enable debug output
+)
 ```
 
-### TTSConfig
+### TextToAudioStream
 
 ```python
-@dataclass(frozen=True)
-class TTSConfig:
-    voice: str = "af_heart"
-    speed: float = 1.0
-    sample_rate: int = 24000
-    channels: int = 1
-    device: str | None = None  # "cuda", "mps", "cpu", or None (auto-detect)
-    trim_silence: bool = True
-    silence_threshold: float = 0.005
-    fade_in_ms: int = 10
-    fade_out_ms: int = 10
-    extra_trim_start_ms: int = 15
-    extra_trim_end_ms: int = 15
-    memory_threshold_gb: float = 2.0  # GPU memory threshold for auto-clearing
+TextToAudioStream(
+    engine,                      # KokoroEngine instance
+    on_audio_stream_start=None,  # Callback when audio starts
+    on_audio_stream_stop=None,   # Callback when audio stops
+    on_audio_chunk=None,         # Callback for each audio chunk
+    on_word=None,                # Callback for word timing
+    muted=False                  # Disable speaker output
+)
 ```
 
-### PlaybackConfig
+## Requirements
 
-```python
-@dataclass(frozen=True)
-class PlaybackConfig:
-    device_index: int | None = None
-    frames_per_buffer: int = 512
-    muted: bool = False
-```
+- Python 3.9-3.12
+- PyAudio (may require system dependencies)
+- Torch
 
-## Audio Format
-
-Default output format:
-- Format: PCM16 (16-bit signed integers)
-- Sample rate: 24000 Hz
-- Channels: 1 (mono)
-
-### Format Conversion
-
-Convert to other formats on-the-fly:
-
-```python
-from streaming_tts import TTSStream
-
-stream = TTSStream()
-stream.feed("Hello world")
-
-# Stream as MP3
-for chunk in stream.stream(format="mp3"):
-    send_to_client(chunk)
-
-# Or with async
-async for chunk in stream.stream_async(format="opus"):
-    await websocket.send_bytes(chunk)
-
-# Or with callback
-stream.feed("More text").play(on_chunk=callback, format="wav", muted=True)
-```
-
-Supported formats: `pcm` (default), `wav`, `mp3`, `opus`, `flac`, `aac`
-
-### StreamingAudioWriter (Low-level)
-
-For direct format conversion:
-
-```python
-from streaming_tts import StreamingAudioWriter, get_content_type
-
-writer = StreamingAudioWriter("mp3", sample_rate=24000)
-
-for audio_chunk in engine.synthesize(text):
-    encoded = writer.write_chunk(audio_chunk)
-    if encoded:
-        send(encoded)
-
-# Get final bytes (codec flush)
-final = writer.finalize()
-if final:
-    send(final)
-
-# Get MIME type for HTTP headers
-content_type = get_content_type("mp3")  # "audio/mpeg"
-```
-
-## Context Manager
-
-TTSStream supports context manager protocol for automatic cleanup:
-
-```python
-with TTSStream() as stream:
-    stream.feed("Hello world")
-    for chunk in stream.stream():
-        process(chunk)
-# Resources automatically released
-```
-
-## Development
-
+### Windows Note
+PyAudio on Windows may require Visual C++ Build Tools. If you encounter issues:
 ```bash
-# Clone and install
-git clone https://github.com/yourusername/streaming-tts
-cd streaming-tts
-pip install -e ".[dev]"
-
-# Run tests
-pytest -v tests/
-
-# Type check
-mypy src/
-
-# Lint
-ruff check src/ tests/
+pip install pipwin
+pipwin install pyaudio
 ```
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
-
-## Acknowledgments
-
-- [Kokoro TTS](https://huggingface.co/hexgrad/Kokoro-82M) - The underlying TTS model
-- [RealtimeTTS](https://github.com/KoljaB/RealtimeTTS) - Original library this was extracted from
+MIT
