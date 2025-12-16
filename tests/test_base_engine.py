@@ -2,7 +2,7 @@
 
 import pytest
 import numpy as np
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from streaming_tts.base_engine import BaseEngine, TimingInfo
 
 

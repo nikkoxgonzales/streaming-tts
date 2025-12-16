@@ -1,6 +1,5 @@
 """Tests for streaming_tts.text_normalizer module."""
 
-import pytest
 from streaming_tts.text_normalizer import (
     normalize_text,
     NormalizationOptions,

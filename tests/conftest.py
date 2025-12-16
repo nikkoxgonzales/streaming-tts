@@ -3,7 +3,6 @@
 import pytest
 import numpy as np
 import queue
-from unittest.mock import MagicMock
 
 
 # --- Sample Data Fixtures ---
@@ -63,11 +62,8 @@ def mock_queue():
 @pytest.fixture
 def has_pyav():
     """Check if PyAV is available."""
-    try:
-        import av
-        return True
-    except ImportError:
-        return False
+    import importlib.util
+    return importlib.util.find_spec("av") is not None
 
 
 # --- Pytest Markers ---

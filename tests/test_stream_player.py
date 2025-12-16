@@ -2,9 +2,7 @@
 
 import pytest
 import queue
-import threading
-from unittest.mock import patch, MagicMock, PropertyMock
-import numpy as np
+from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture

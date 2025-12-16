@@ -2,8 +2,7 @@
 
 import pytest
 import queue
-from unittest.mock import patch, MagicMock, PropertyMock
-import numpy as np
+from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture
@@ -66,7 +65,7 @@ class TestTextToAudioStreamInit:
         from streaming_tts.text_to_stream import TextToAudioStream
 
         stream = TextToAudioStream(engine=mock_engine, output_device_index=2)
-        # Should not raise
+        assert stream.output_device_index == 2
 
 
 class TestTextToAudioStreamFeed:

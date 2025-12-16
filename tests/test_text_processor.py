@@ -1,6 +1,5 @@
 """Tests for streaming_tts.text_processor module."""
 
-import pytest
 from streaming_tts.text_processor import (
     parse_pause_tags,
     split_sentences,

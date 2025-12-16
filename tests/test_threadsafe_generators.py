@@ -1,8 +1,6 @@
 """Tests for streaming_tts.threadsafe_generators module."""
 
-import pytest
 import threading
-import time
 from streaming_tts.threadsafe_generators import (
     CharIterator,
     AccumulatingThreadSafeGenerator,
