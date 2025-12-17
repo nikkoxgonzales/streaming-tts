@@ -28,9 +28,33 @@ import threading
 import traceback
 import logging
 import pyaudio
+import random
 import queue
 import time
 import wave
+
+# Conversational pause ranges (in seconds) for natural speech rhythm
+# Each punctuation maps to (min_duration, max_duration)
+PUNCTUATION_PAUSE_RANGES = {
+    ';': (0.400, 0.500),   # 400-500ms
+    ':': (0.400, 0.500),   # 400-500ms
+    '?': (0.500, 0.600),   # 500-600ms
+    '!': (0.600, 0.700),   # 600-700ms
+    ',': (0.600, 0.700),   # 600-700ms
+    '.': (0.500, 0.600),   # 500-600ms
+    '…': (0.700, 0.900),   # 700-900ms
+}
+
+
+def _get_trailing_punctuation(text: str) -> str:
+    """Get the meaningful trailing punctuation, handling '...' as ellipsis."""
+    text = text.rstrip()
+    if not text:
+        return ''
+    if text.endswith('...'):
+        return '…'  # Normalize three dots to ellipsis character
+    return text[-1]
+
 
 class TextToAudioStream:
     def __init__(
@@ -288,6 +312,7 @@ class TextToAudioStream:
         comma_silence_duration=0.0,
         sentence_silence_duration=0.0,
         default_silence_duration=0.0,
+        conversational_pauses: bool = True,
         muted: bool = False,
         sentence_fragment_delimiters: str = ".?!;:,\n…。",
         force_first_fragment_after_words=30,
@@ -324,6 +349,7 @@ class TextToAudioStream:
                 comma_silence_duration,
                 sentence_silence_duration,
                 default_silence_duration,
+                conversational_pauses,
                 muted,
                 sentence_fragment_delimiters,
                 force_first_fragment_after_words,
@@ -367,6 +393,7 @@ class TextToAudioStream:
         comma_silence_duration=0.0,
         sentence_silence_duration=0.0,
         default_silence_duration=0.0,
+        conversational_pauses: bool = True,
         muted: bool = False,
         sentence_fragment_delimiters: str = ".?!;:,\n…。",
         force_first_fragment_after_words=30,
@@ -398,9 +425,10 @@ class TextToAudioStream:
         - language: Language to use for sentence splitting.
         - context_size: The number of characters used to establish context for sentence boundary detection. A larger context improves the accuracy of detecting sentence boundaries. Default is 12 characters.
         - context_size_look_overhead: The number of characters to look ahead when determining sentence boundaries. This helps in identifying the end of a sentence more accurately. Default is 12 characters.
-        - comma_silence_duration: The duration of silence to insert after a comma in seconds. Default is 0.0 seconds.
-        - sentence_silence_duration: The duration of silence to insert after a sentence in seconds. Default is 0.0 seconds.
+        - comma_silence_duration: The duration of silence to insert after a comma in seconds. Default is 0.0 seconds. Only used when conversational_pauses=False.
+        - sentence_silence_duration: The duration of silence to insert after a sentence in seconds. Default is 0.0 seconds. Only used when conversational_pauses=False.
         - default_silence_duration: The default duration of silence to insert after a sentence in seconds. Default is 0.0 seconds.
+        - conversational_pauses: If True (default), uses per-punctuation pause ranges with randomization for natural speech rhythm. Punctuation-specific ranges: comma (100-200ms), semicolon/colon (200-300ms), period/question (300-500ms), exclamation (250-400ms), ellipsis (500-800ms). Set to False to use comma_silence_duration and sentence_silence_duration instead.
         - muted: If True, disables audio playback via local speakers (in case you want to synthesize to file or process audio chunks). Default is False.
         - sentence_fragment_delimiters (str): A string of characters that are
             considered sentence delimiters. Default is ".?!;:,\n…)]}。-".
@@ -579,16 +607,26 @@ class TextToAudioStream:
                                 # insert potential silence
                                 stream_format, _, sample_rate = self.engine.get_stream_info()
 
-                                end_sentence_delimeters = ".!?\u2026\u3002\u00a1\u00bf"
-                                mid_sentence_delimeters = ";:,\n()[]{}-\u201c\u201d\u201e\u201f\u2014/|\u300a\u300b"
-
                                 text_stripped = sentence.strip()
-                                if text_stripped and text_stripped[-1] in end_sentence_delimeters:
-                                    silence_duration = sentence_silence_duration
-                                elif text_stripped and text_stripped[-1] in mid_sentence_delimeters:
-                                    silence_duration = comma_silence_duration
+                                if conversational_pauses:
+                                    # Use per-punctuation pause ranges with randomization
+                                    trailing_punct = _get_trailing_punctuation(text_stripped)
+                                    if trailing_punct in PUNCTUATION_PAUSE_RANGES:
+                                        min_dur, max_dur = PUNCTUATION_PAUSE_RANGES[trailing_punct]
+                                        silence_duration = random.uniform(min_dur, max_dur)
+                                    else:
+                                        silence_duration = default_silence_duration
                                 else:
-                                    silence_duration = default_silence_duration
+                                    # Legacy behavior: two-tier silence durations
+                                    end_sentence_delimeters = ".!?\u2026\u3002\u00a1\u00bf"
+                                    mid_sentence_delimeters = ";:,\n()[]{}-\u201c\u201d\u201e\u201f\u2014/|\u300a\u300b"
+
+                                    if text_stripped and text_stripped[-1] in end_sentence_delimeters:
+                                        silence_duration = sentence_silence_duration
+                                    elif text_stripped and text_stripped[-1] in mid_sentence_delimeters:
+                                        silence_duration = comma_silence_duration
+                                    else:
+                                        silence_duration = default_silence_duration
 
                                 if silence_duration > 0:
                                     silent_samples = int(sample_rate * silence_duration)
@@ -707,6 +745,7 @@ class TextToAudioStream:
                     tokenizer=tokenizer,
                     language=language,
                     context_size=context_size,
+                    conversational_pauses=conversational_pauses,
                     muted=muted,
                     sentence_fragment_delimiters=sentence_fragment_delimiters,
                     force_first_fragment_after_words=force_first_fragment_after_words,

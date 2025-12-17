@@ -930,7 +930,7 @@ class StreamPlayer:
         else:
             self.playback_active = False
             if self.playback_thread and self.playback_thread.is_alive():
-                self.playback_thread.join(timeout=10.0)
+                self.playback_thread.join()  # Wait for buffer to fully drain
 
         # Flush crossfade buffer before closing stream
         if self.crossfade_buffer is not None and not immediate:
