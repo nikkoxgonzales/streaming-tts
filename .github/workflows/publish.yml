@@ -1,4 +1,4 @@
-name: Publish to PyPI
+name: Release to Gitbhub & Publish to PyPI
 
 on:
   push:
@@ -29,6 +29,21 @@ jobs:
 
       - name: Run tests
         run: pytest --cov=streaming_tts --cov-fail-under=60
+
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to create releases
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true  # Auto-generates notes from commits/PRs
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
 
   publish:
     needs: test
